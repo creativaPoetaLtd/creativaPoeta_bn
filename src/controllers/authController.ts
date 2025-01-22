@@ -2,8 +2,14 @@ import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import User, { IUser } from "../models/User";
+import dotenv from "dotenv";
+dotenv.config();
 
-const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
+
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error("JWT_SECRET is not defined in the environment variables.");
+}
 
 export const signup = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -56,5 +62,4 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     res.status(500).json({ error: (error as Error).message });
   }
 };
-
 
