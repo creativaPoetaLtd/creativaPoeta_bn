@@ -4,11 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon src/server.ts",
-    "build": "npm install --legacy-peer-deps && npm run build",
-    "start": "node dist/server.js"
-  },
+  "test": "echo \"Error: no test specified\" && exit 1",
+  "dev": "nodemon src/server.ts",
+  "build": "npm install --legacy-peer-deps && tsc",  
+  "start": "node dist/server.js"
+},
   "keywords": [],
   "author": "",
   "license": "ISC",
