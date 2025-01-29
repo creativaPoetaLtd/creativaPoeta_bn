@@ -1,8 +1,7 @@
 import express from "express";
 import { createBlog, fetchBlogs, getSingleBlog, updateBlog, likeBlog, addComment } from "../controllers/BlogController";
 import { authenticateUser, authorizeRoles } from "../middleware/authMiddleware";
-import upload from "../utils/multer";
-
+import { upload } from "../utils/multer";
 const BlogRouter = express.Router();
 
 
@@ -12,6 +11,8 @@ BlogRouter.get("/:id", authenticateUser, authorizeRoles(["admin"]), getSingleBlo
 BlogRouter.patch("/:id", authenticateUser, authorizeRoles(["admin"]), upload.single("image"), updateBlog);
 BlogRouter.post("/:id/like", authenticateUser, likeBlog);
 BlogRouter.post("/:id/comment", authenticateUser, addComment);
+
+
 
 
 export default BlogRouter;
