@@ -5,12 +5,12 @@ import { upload } from "../utils/multer";
 const BlogRouter = express.Router();
 
 
-BlogRouter.post("/", authenticateUser, authorizeRoles(["admin"]), upload.single("image"), createBlog);
-BlogRouter.get("/", authenticateUser, authorizeRoles(["admin"]), fetchBlogs);
-BlogRouter.get("/:id", authenticateUser, authorizeRoles(["admin"]), getSingleBlog);
-BlogRouter.patch("/:id", authenticateUser, authorizeRoles(["admin"]), upload.single("image"), updateBlog);
-BlogRouter.post("/:id/like", authenticateUser, likeBlog);
-BlogRouter.post("/:id/comment", authenticateUser, addComment);
+BlogRouter.post("/", upload.single("image"), createBlog);
+BlogRouter.get("/", fetchBlogs);
+BlogRouter.get("/:id", getSingleBlog);
+BlogRouter.patch("/:id", upload.single("image"), updateBlog);
+BlogRouter.post("/:id/like", likeBlog);
+BlogRouter.post("/:id/comment", addComment);
 
 
 
