@@ -6,6 +6,7 @@ import { uploadToCloudinary } from "../utils/cloudinary";
 export const createBlog = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
         const { title, content } = req.body;
+
         if (!title || !content) {
             res.status(400).json({ message: "Title and content are required." });
             return;
@@ -17,13 +18,13 @@ export const createBlog = async (req: Request, res: Response, next: NextFunction
         const blogData = {
             title,
             content,
-            // Only include author if req.user exists
-            ...(req.user ? { author: req.user._id } : {}),
+            author: req.user._id, // Assumes `req.user` is populated by your auth middleware
             image: imageUrl, // Save image URL in the blog
         };
 
         const blog: IBlog = new Blog(blogData);
         await blog.save();
+
         res.status(201).json({ message: "Blog created successfully", blog });
     } catch (error) {
         next(error);
