@@ -8,7 +8,7 @@ interface IComment {
 export interface IBlog extends Document {
   title: string;
   content: string;
-  author: mongoose.Types.ObjectId; // Reference to User model
+  author?: mongoose.Types.ObjectId; // Reference to User model
   image: string; // New field for storing the image URL
   likes: mongoose.Types.ObjectId[]; // Array of user IDs who liked the blog
   comments: IComment[];
