@@ -76,21 +76,24 @@ export const fetchBlogs = async (req: Request, res: Response, next: NextFunction
     }
 };
 
-// Get a single blog
 export const getSingleBlog = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
         const blogId = req.params.id;
-        const blog = await Blog.findById(blogId);
+        const blog = await Blog.findById(blogId).populate({
+            path: 'author',
+            select: 'name email' // Only select the fields you want to include
+        });
+        
         if (!blog) {
             res.status(404).json({ message: "Blog not found" });
             return;
         }
+        
         res.status(200).json({ message: "Blog fetched successfully", blog });
     } catch (error) {
         next(error);
     }
 };
-
 // Update a blog
 export const updateBlog = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
