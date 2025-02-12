@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import Blog from "../models/Blog";
 import { IBlog } from "../models/Blog";
 import { uploadToCloudinary } from "../utils/cloudinary";
+import fs from 'fs';
 
 export const createBlog = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -12,25 +13,59 @@ export const createBlog = async (req: Request, res: Response, next: NextFunction
             return;
         }
 
-        // Use the uploaded file's Cloudinary URL if a file exists
-        const imageUrl = req.file?.path || ""; // Multer stores the Cloudinary URL in `req.file.path`
+        let imageUrl = '';
+
+        if (req.file) {
+            try {
+                // Read the file buffer from the temporary file
+                const fileBuffer = fs.readFileSync(req.file.path);
+                
+                // Upload to Cloudinary
+                const cloudinaryResult = await uploadToCloudinary(fileBuffer, 'blogs');
+                
+                // Get the secure URL from Cloudinary
+                imageUrl = (cloudinaryResult as any).secure_url;
+                
+                // Clean up: Delete the temporary file after upload
+                fs.unlinkSync(req.file.path);
+            } catch (uploadError) {
+                // If there's an error uploading to Cloudinary, clean up the temporary file
+                if (req.file?.path && fs.existsSync(req.file.path)) {
+                    fs.unlinkSync(req.file.path);
+                }
+                if (uploadError instanceof Error) {
+                    throw new Error(`Failed to upload image: ${uploadError.message}`);
+                } else {
+                    throw new Error('Failed to upload image due to an unknown error.');
+                }
+            }
+        }
 
         const blogData = {
             title,
             content,
-            author: req.user._id, // Assumes `req.user` is populated by your auth middleware
-            image: imageUrl, // Save image URL in the blog
+            author: req.user._id, // Assumes req.user is populated by auth middleware
+            image: imageUrl, // Store the Cloudinary URL
         };
 
         const blog: IBlog = new Blog(blogData);
         await blog.save();
 
-        res.status(201).json({ message: "Blog created successfully", blog });
+        res.status(201).json({
+            message: "Blog created successfully",
+            blog: {
+                ...blog.toJSON(),
+                image: imageUrl // Ensure the response includes the Cloudinary URL
+            }
+        });
     } catch (error) {
+        // Clean up any temporary files if they exist
+        if (req.file?.path && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
         next(error);
     }
 };
-
 // Fetch all blogs
 export const fetchBlogs = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {

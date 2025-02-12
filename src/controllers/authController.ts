@@ -55,7 +55,6 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     const token = jwt.sign({ _id: user._id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "1h" });
-    console.log("Generated JWT token:", token);
 
     res.status(200).json({ token, user: { id: user._id, name: user.name, email: user.email, role: user.role } });
   } catch (error) {
