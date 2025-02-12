@@ -79,10 +79,17 @@ export const fetchBlogs = async (req: Request, res: Response, next: NextFunction
 export const getSingleBlog = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
         const blogId = req.params.id;
-        const blog = await Blog.findById(blogId).populate({
-            path: 'author',
-            select: 'name email' // Only select the fields you want to include
-        });
+        const blog = await Blog.findById(blogId).populate([
+            {
+                path: 'author',
+                select: 'name email'
+            },
+            {
+                // Populate the user field within comments
+                path: 'comments.user',
+                select: 'name email'
+            }
+        ]);
         
         if (!blog) {
             res.status(404).json({ message: "Blog not found" });
