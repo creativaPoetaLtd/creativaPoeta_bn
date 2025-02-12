@@ -106,26 +106,63 @@ export const updateBlog = async (req: Request, res: Response, next: NextFunction
     try {
         const blogId = req.params.id;
 
-        // Handle image upload if a new file is provided
-        let imageUrl = req.body.image; // Retain the existing image URL if no new image is uploaded
-        if (req.file) {
-            const result = await uploadToCloudinary(req.file.buffer, "blogs");
-            imageUrl = (result as { secure_url: string }).secure_url;
-        }
-
-        const updatedData = {
-            ...req.body,
-            image: imageUrl, // Update the image URL
-        };
-
-        const blog = await Blog.findByIdAndUpdate(blogId, updatedData, { new: true });
-        if (!blog) {
+        // First check if blog exists
+        const existingBlog = await Blog.findById(blogId);
+        if (!existingBlog) {
             res.status(404).json({ message: "Blog not found" });
             return;
         }
 
-        res.status(200).json({ message: "Blog updated successfully", blog });
+        // Handle image upload if a new file is provided
+        let imageUrl = existingBlog.image; // Keep existing image by default
+        if (req.file) {
+            try {
+                // Read the file buffer from the temporary file
+                const fileBuffer = fs.readFileSync(req.file.path);
+                
+                // Upload to Cloudinary
+                const cloudinaryResult = await uploadToCloudinary(fileBuffer, 'blogs');
+                imageUrl = (cloudinaryResult as any).secure_url;
+                
+                // Clean up: Delete the temporary file after upload
+                fs.unlinkSync(req.file.path);
+            } catch (uploadError) {
+                // Clean up temporary file if upload fails
+                if (req.file?.path && fs.existsSync(req.file.path)) {
+                    fs.unlinkSync(req.file.path);
+                }
+                if (uploadError instanceof Error) {
+                    throw new Error(`Failed to upload image: ${uploadError.message}`);
+                } else {
+                    throw new Error('Failed to upload image due to an unknown error.');
+                }
+            }
+        }
+
+        const updatedData = {
+            ...req.body,
+            image: imageUrl,
+        };
+
+        // Update the blog
+        const updatedBlog = await Blog.findByIdAndUpdate(
+            blogId,
+            updatedData,
+            { new: true }
+        ).populate({
+            path: 'author',
+            select: 'name email'
+        });
+
+        res.status(200).json({ 
+            message: "Blog updated successfully", 
+            blog: updatedBlog 
+        });
     } catch (error) {
+        // Clean up any temporary files if they exist
+        if (req.file?.path && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
         next(error);
     }
 };
