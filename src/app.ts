@@ -12,7 +12,7 @@ app.use(cors());
 
 app.use(
     cors({
-      origin: ["http://localhost:5000", "https://your-frontend-domain.com"],
+      origin: ["http://localhost:5174/", "https://creativapoeta.netlify.app/"],
       methods: ["GET", "POST", "PUT", "DELETE"],
       credentials: true, 
     })
