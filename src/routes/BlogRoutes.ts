@@ -9,8 +9,8 @@ BlogRouter.post("/", authenticateUser, authorizeRoles(["admin"]), upload.single(
 BlogRouter.get("/", fetchBlogs);
 BlogRouter.get("/:id", getSingleBlog);
 BlogRouter.patch("/:id", authenticateUser, authorizeRoles(["admin"]), upload.single("image"), updateBlog);
-BlogRouter.post("/:id/like", authenticateUser, likeBlog);
-BlogRouter.post("/:id/comment", authenticateUser, addComment);
+BlogRouter.post("/:id/like", likeBlog);
+BlogRouter.post("/:id/comment", addComment);
 
 
 

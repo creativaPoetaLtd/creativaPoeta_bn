@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from "mongoose";
 
 interface IComment {
-  user: mongoose.Types.ObjectId;
+  user: string; // Store user name instead of user ID
   text: string;
   createdAt: Date;
 }
@@ -10,17 +10,16 @@ export interface IBlog extends Document {
   content: string;
   author: mongoose.Types.ObjectId; // Reference to User model
   image: string; // New field for storing the image URL
-  likes: mongoose.Types.ObjectId[]; // Array of user IDs who liked the blog
+  likes: string[]; // Change to array of strings
   comments: IComment[];
   createdAt: Date;
 }
 
 const CommentSchema = new Schema<IComment>({
-  user: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  user: { type: String, required: true }, // Store user name instead of user ID
   text: { type: String, required: true },
   createdAt: { type: Date, default: Date.now },
 });
-
 
 const BlogSchema: Schema = new Schema(
   {
@@ -28,7 +27,7 @@ const BlogSchema: Schema = new Schema(
     content: { type: String, required: true },
     author: { type: Schema.Types.ObjectId, ref: "User", required: true }, // Reference to User model
     image: { type: String }, // Add this field
-    likes: { type: [mongoose.Types.ObjectId], default: [] }, // Initialize likes as an empty array
+    likes: { type: [String], default: [] }, // Change to array of strings
     comments: [CommentSchema], // Embedded comments
   },
   { timestamps: true }
