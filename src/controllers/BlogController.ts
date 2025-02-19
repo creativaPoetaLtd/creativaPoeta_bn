@@ -85,7 +85,6 @@ export const getSingleBlog = async (req: Request, res: Response, next: NextFunct
                 select: 'name email'
             },
             {
-                // Populate the user field within comments
                 path: 'comments.user',
                 select: 'name email'
             }
@@ -170,7 +169,12 @@ export const updateBlog = async (req: Request, res: Response, next: NextFunction
 export const likeBlog = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const blogId = req.params.id;
-        const userId = req.user._id; // Assuming `req.user` contains authenticated user info
+        const { userName } = req.body; // Accept user name from request body
+
+        if (!userName) {
+            res.status(400).json({ message: "User name is required." });
+            return;
+        }
 
         const blog = await Blog.findById(blogId);
 
@@ -183,12 +187,12 @@ export const likeBlog = async (req: Request, res: Response, next: NextFunction) 
             blog.likes = [];
         }
 
-        if (blog.likes.includes(userId)) {
+        if (blog.likes.includes(userName)) {
             // If the user already liked the blog, remove the like
-            blog.likes = blog.likes.filter((id) => id.toString() !== userId.toString());
+            blog.likes = blog.likes.filter((name) => name !== userName);
         } else {
             // Otherwise, add the user's like
-            blog.likes.push(userId);
+            blog.likes.push(userName);
         }
 
         await blog.save();
@@ -202,10 +206,10 @@ export const likeBlog = async (req: Request, res: Response, next: NextFunction) 
 export const addComment = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const blogId = req.params.id;
-        const { text } = req.body;
+        const { userName, text } = req.body; // Accept user name and comment text from request body
 
-        if (!text) {
-            res.status(400).json({ message: "Comment text is required." });
+        if (!text || !userName) {
+            res.status(400).json({ message: "User name and comment text are required." });
             return;
         }
 
@@ -217,7 +221,7 @@ export const addComment = async (req: Request, res: Response, next: NextFunction
         }
 
         const comment = {
-            user: req.user._id, // Assuming `req.user` contains authenticated user info
+            user: userName, // Store user name instead of user ID
             text,
             createdAt: new Date(),
         };
