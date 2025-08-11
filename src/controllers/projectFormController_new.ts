@@ -24,6 +24,7 @@ export const sendProjectInquiry = async (
       contentElements,
       budget,
       timeline,
+      status,
       projectPurpose,
       additionalInfo,
     } = req.body;
@@ -70,7 +71,7 @@ export const sendProjectInquiry = async (
         ? projectPurpose.map((p: string) => p.trim())
         : [projectPurpose.trim()],
       additionalInfo: additionalInfo?.trim(),
-      // status will default to "pending" from the model
+      status: status || "pending",
     });
 
     const savedRequest = await projectRequest.save();
@@ -108,28 +109,19 @@ export const sendProjectInquiry = async (
             <p><strong>Submitted:</strong> ${new Date().toLocaleString()}</p>
         `;
 
-    // Send the email (optional - don't fail if email fails)
+    // Send the email
     const emailUser = process.env.EMAIL_USER;
-    let emailSent = false;
-
-    if (emailUser) {
-      try {
-        await sendEmail(emailUser, "New Project Inquiry", htmlContent);
-        emailSent = true;
-        console.log("Email notification sent successfully");
-      } catch (emailError) {
-        console.error("Failed to send email notification:", emailError);
-        // Don't fail the request if email fails
-      }
+    if (!emailUser) {
+      res.status(500).json({ message: "Email user is not defined." });
+      return;
     }
 
+    await sendEmail(emailUser, "New Project Inquiry", htmlContent);
+
     res.status(201).json({
-      message: `Inquiry saved successfully!${
-        emailSent ? " Email notification sent." : " (Email notification failed)"
-      }`,
+      message: "Inquiry sent and saved successfully!",
       requestId: savedRequest._id,
       status: savedRequest.status,
-      emailSent,
     });
   } catch (error) {
     next(error);
@@ -253,21 +245,11 @@ export const replyToProjectRequest = async (
             <p><small>Reference ID: ${request._id}</small></p>
         `;
 
-    // Send reply email to client (optional - don't fail if email fails)
-    let emailSent = false;
-    try {
-      await sendEmail(request.email, subject, clientEmailContent);
-      emailSent = true;
-      console.log(`Reply email sent to ${request.email}`);
-    } catch (emailError) {
-      console.error("Failed to send reply email:", emailError);
-      // Don't fail the request if email fails
-    }
+    // Send reply email to client
+    await sendEmail(request.email, subject, clientEmailContent);
 
     res.status(200).json({
-      message: `Reply saved successfully!${
-        emailSent ? " Email sent to client." : " (Email sending failed)"
-      }`,
+      message: "Reply sent successfully",
       request: {
         _id: request._id,
         status: request.status,
@@ -275,7 +257,6 @@ export const replyToProjectRequest = async (
         repliedAt: request.repliedAt,
         replyMessage: request.replyMessage,
       },
-      emailSent,
     });
   } catch (error) {
     next(error);

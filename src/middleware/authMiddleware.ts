@@ -3,7 +3,6 @@ import { Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
 dotenv.config();
 
-
 const JWT_SECRET = process.env.JWT_SECRET as string;
 
 declare module "express-serve-static-core" {
@@ -13,14 +12,19 @@ declare module "express-serve-static-core" {
 }
 
 // Middleware for authentication
-export const authenticateUser = (req: Request, res: Response, next: NextFunction): void => {
+export const authenticateUser = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401).json({ message: "Access denied. No token provided or invalid header." });
+    res
+      .status(401)
+      .json({ message: "Access denied. No token provided or invalid header." });
     return;
   }
-
   const token = authHeader.split(" ")[1];
 
   if (!token) {
@@ -30,7 +34,9 @@ export const authenticateUser = (req: Request, res: Response, next: NextFunction
 
   try {
     if (!JWT_SECRET) {
-      res.status(500).json({ message: "Internal server error. JWT secret is not defined." });
+      res
+        .status(500)
+        .json({ message: "Internal server error. JWT secret is not defined." });
       return;
     }
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -42,20 +48,35 @@ export const authenticateUser = (req: Request, res: Response, next: NextFunction
   }
 };
 
-
-// Middleware for role-based access
+// Middleware for role-based access (simplified - all users are admins)
 export const authorizeRoles = (roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction): void => {
-    if (!req.user || !req.user.role) {
-      res.status(401).json({ message: "Access denied. User not authenticated or role missing." });
+    if (!req.user) {
+      res
+        .status(401)
+        .json({ message: "Access denied. User not authenticated." });
       return;
     }
 
-    if (!roles.includes(req.user.role)) {
-      res.status(403).json({ message: "Access denied. You do not have the required role." });
-      return;
-    }
-
+    // Since all users are admins, just check if user is authenticated
+    // No need to check roles since everyone is admin
     next();
   };
+};
+
+// Simplified admin-only middleware (since all users are admins)
+export const adminOnly = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  if (!req.user) {
+    res
+      .status(401)
+      .json({ message: "Access denied. Admin authentication required." });
+    return;
+  }
+
+  // All authenticated users are admins
+  next();
 };

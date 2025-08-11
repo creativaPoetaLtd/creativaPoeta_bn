@@ -5,7 +5,6 @@ import User, { IUser } from "../models/User";
 import dotenv from "dotenv";
 dotenv.config();
 
-
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   throw new Error("JWT_SECRET is not defined in the environment variables.");
@@ -13,7 +12,7 @@ if (!JWT_SECRET) {
 
 export const signup = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password } = req.body; // Remove role from destructuring
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -27,12 +26,15 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       name,
       email,
       password: hashedPassword,
-      role, 
+      // role will default to "admin" from the model
     });
 
     await newUser.save();
 
-    res.status(201).json({ message: "User registered successfully." });
+    res.status(201).json({
+      message: "Admin user registered successfully.",
+      user: { name: newUser.name, email: newUser.email, role: newUser.role },
+    });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -54,11 +56,24 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const token = jwt.sign({ _id: user._id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "1h" });
+    const token = jwt.sign(
+      { _id: user._id, email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: "1d" }
+    );
 
-    res.status(200).json({ token, user: { id: user._id, name: user.name, email: user.email, role: user.role } });
+    res
+      .status(200)
+      .json({
+        token,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        },
+      });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
 };
-
