@@ -8,16 +8,12 @@ export interface IProjectRequest extends Document {
   company?: string;
   additionalInfo?: string;
 
-  // Project Details
-  projectType: string;
-  deliverables: string[];
-  mainGoal: string;
-  audience: string[];
-  stylePreference: string;
-  contentElements: string[];
-  budget: number;
-  timeline: string;
-  projectPurpose: string[];
+  // Service Information (New Structure)
+  serviceType: string;
+  selectedServices: string[];
+  customServiceDescription?: string; // For "Other" service type description
+  customServiceNeeds?: string; // For "Other" specific needs description
+  serviceSpecificOtherDescription?: string; // For when user selects "Other" from service options
 
   // Status and Management
   status: string;
@@ -39,16 +35,12 @@ const ProjectRequestSchema: Schema = new Schema(
     company: { type: String, trim: true },
     additionalInfo: { type: String, trim: true },
 
-    // Project Details
-    projectType: { type: String, required: true, trim: true },
-    deliverables: [{ type: String, required: true, trim: true }],
-    mainGoal: { type: String, required: true, trim: true },
-    audience: [{ type: String, required: true, trim: true }],
-    stylePreference: { type: String, required: true, trim: true },
-    contentElements: [{ type: String, required: true, trim: true }],
-    budget: { type: Number, required: true },
-    timeline: { type: String, required: true, trim: true },
-    projectPurpose: [{ type: String, required: true, trim: true }],
+    // Service Information (New Structure)
+    serviceType: { type: String, required: true, trim: true },
+    selectedServices: [{ type: String, trim: true }],
+    customServiceDescription: { type: String, trim: true }, // For "Other" service type description
+    customServiceNeeds: { type: String, trim: true }, // For "Other" specific needs description
+    serviceSpecificOtherDescription: { type: String, trim: true }, // For when user selects "Other" from service options
 
     // Status and Management
     status: {
