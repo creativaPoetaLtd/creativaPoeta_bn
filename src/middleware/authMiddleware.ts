@@ -44,7 +44,18 @@ export const authenticateUser = (
     next();
   } catch (err: any) {
     console.error("Token verification error:", err.message);
-    res.status(400).json({ message: "Invalid or expired token." });
+    console.error("Token:", token.substring(0, 50) + "...");
+    console.error("JWT_SECRET length:", JWT_SECRET ? JWT_SECRET.length : 0);
+
+    if (err.name === "JsonWebTokenError") {
+      res
+        .status(401)
+        .json({ message: "Invalid token signature. Please log in again." });
+    } else if (err.name === "TokenExpiredError") {
+      res.status(401).json({ message: "Token expired. Please log in again." });
+    } else {
+      res.status(400).json({ message: "Invalid or expired token." });
+    }
   }
 };
 

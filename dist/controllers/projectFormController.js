@@ -1,60 +1,53 @@
-import { Request, Response, NextFunction } from "express";
-import sendEmail from "../utils/sendEmail";
-import ProjectRequest from "../models/ProjectDescription";
-import dotenv from "dotenv";
-
-dotenv.config();
-
-export const sendProjectInquiry = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const {
-      name,
-      email,
-      phone,
-      company,
-      serviceType,
-      selectedServices,
-      customServiceDescription,
-      customServiceNeeds,
-      serviceSpecificOtherDescription,
-      additionalInfo,
-    } = req.body;
-
-    // Basic required field validation
-    if (!name || !email || !phone || !serviceType) {
-      res.status(400).json({
-        message: "Name, email, phone, and service type are required.",
-      });
-      return;
-    }
-
-    // Create and save project request to database
-    const projectRequest = new ProjectRequest({
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
-      phone: phone.trim(),
-      company: company?.trim(),
-      serviceType: serviceType.trim(),
-      selectedServices: Array.isArray(selectedServices)
-        ? selectedServices.map((s: string) => s.trim())
-        : selectedServices
-        ? [selectedServices.trim()]
-        : [],
-      customServiceDescription: customServiceDescription?.trim(),
-      customServiceNeeds: customServiceNeeds?.trim(),
-      serviceSpecificOtherDescription: serviceSpecificOtherDescription?.trim(),
-      additionalInfo: additionalInfo?.trim(),
-      // status will default to "pending" from the model
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
-
-    const savedRequest = await projectRequest.save();
-
-    // Construct the beautiful HTML content for the email
-    const htmlContent = `
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.deleteProjectRequest = exports.updateProjectRequestStatus = exports.replyToProjectRequest = exports.getProjectRequest = exports.getAllProjectRequests = exports.sendProjectInquiry = void 0;
+const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
+const ProjectDescription_1 = __importDefault(require("../models/ProjectDescription"));
+const dotenv_1 = __importDefault(require("dotenv"));
+dotenv_1.default.config();
+const sendProjectInquiry = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { name, email, phone, company, serviceType, selectedServices, customServiceDescription, customServiceNeeds, serviceSpecificOtherDescription, additionalInfo, } = req.body;
+        // Basic required field validation
+        if (!name || !email || !phone || !serviceType) {
+            res.status(400).json({
+                message: "Name, email, phone, and service type are required.",
+            });
+            return;
+        }
+        // Create and save project request to database
+        const projectRequest = new ProjectDescription_1.default({
+            name: name.trim(),
+            email: email.trim().toLowerCase(),
+            phone: phone.trim(),
+            company: company === null || company === void 0 ? void 0 : company.trim(),
+            serviceType: serviceType.trim(),
+            selectedServices: Array.isArray(selectedServices)
+                ? selectedServices.map((s) => s.trim())
+                : selectedServices
+                    ? [selectedServices.trim()]
+                    : [],
+            customServiceDescription: customServiceDescription === null || customServiceDescription === void 0 ? void 0 : customServiceDescription.trim(),
+            customServiceNeeds: customServiceNeeds === null || customServiceNeeds === void 0 ? void 0 : customServiceNeeds.trim(),
+            serviceSpecificOtherDescription: serviceSpecificOtherDescription === null || serviceSpecificOtherDescription === void 0 ? void 0 : serviceSpecificOtherDescription.trim(),
+            additionalInfo: additionalInfo === null || additionalInfo === void 0 ? void 0 : additionalInfo.trim(),
+            // status will default to "pending" from the model
+        });
+        const savedRequest = yield projectRequest.save();
+        // Construct the beautiful HTML content for the email
+        const htmlContent = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -217,9 +210,7 @@ export const sendProjectInquiry = async (
                     </div>
                     <div class="info-item">
                         <div class="info-label">Company</div>
-                        <div class="info-value">${
-                          company || "Not specified"
-                        }</div>
+                        <div class="info-value">${company || "Not specified"}</div>
                     </div>
                 </div>
             </div>
@@ -230,26 +221,20 @@ export const sendProjectInquiry = async (
                     ${serviceType}
                 </div>
                 
-                ${
-                  selectedServices && selectedServices.length
-                    ? `
+                ${selectedServices && selectedServices.length
+            ? `
                 <div class="services-list">
                     <div style="font-weight: 600; margin-bottom: 15px; color: #374151;">Selected Services:</div>
                     ${selectedServices
-                      .map(
-                        (service: string) =>
-                          `<div class="service-item">✓ ${service}</div>`
-                      )
-                      .join("")}
+                .map((service) => `<div class="service-item">✓ ${service}</div>`)
+                .join("")}
                 </div>
                 `
-                    : ""
-                }
+            : ""}
             </div>
 
-            ${
-              customServiceDescription
-                ? `
+            ${customServiceDescription
+            ? `
             <div class="info-section">
                 <div class="info-title">Custom Service Description</div>
                 <div class="additional-info">
@@ -257,12 +242,10 @@ export const sendProjectInquiry = async (
                 </div>
             </div>
             `
-                : ""
-            }
+            : ""}
 
-            ${
-              customServiceNeeds
-                ? `
+            ${customServiceNeeds
+            ? `
             <div class="info-section">
                 <div class="info-title">Custom Service Needs</div>
                 <div class="additional-info">
@@ -270,12 +253,10 @@ export const sendProjectInquiry = async (
                 </div>
             </div>
             `
-                : ""
-            }
+            : ""}
 
-            ${
-              serviceSpecificOtherDescription
-                ? `
+            ${serviceSpecificOtherDescription
+            ? `
             <div class="info-section">
                 <div class="info-title">Additional Service Details</div>
                 <div class="additional-info">
@@ -283,12 +264,10 @@ export const sendProjectInquiry = async (
                 </div>
             </div>
             `
-                : ""
-            }
+            : ""}
 
-            ${
-              additionalInfo
-                ? `
+            ${additionalInfo
+            ? `
             <div class="info-section">
                 <div class="info-title">Additional Information</div>
                 <div class="additional-info">
@@ -296,152 +275,125 @@ export const sendProjectInquiry = async (
                 </div>
             </div>
             `
-                : ""
-            }
+            : ""}
         </div>
         
         <div class="timestamp">
             Submitted on: ${new Date().toLocaleString("en-US", {
-              weekday: "long",
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-              timeZoneName: "short",
-            })}
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            timeZoneName: "short",
+        })}
         </div>
     </div>
 </body>
 </html>
         `;
-
-    // Send the email (optional - don't fail if email fails)
-    const emailUser = process.env.EMAIL_USER;
-    let emailSent = false;
-
-    if (emailUser) {
-      try {
-        await sendEmail(emailUser, "New Project Inquiry", htmlContent);
-        emailSent = true;
-        console.log("Email notification sent successfully");
-      } catch (emailError) {
-        console.error("Failed to send email notification:", emailError);
-        // Don't fail the request if email fails
-      }
+        // Send the email (optional - don't fail if email fails)
+        const emailUser = process.env.EMAIL_USER;
+        let emailSent = false;
+        if (emailUser) {
+            try {
+                yield (0, sendEmail_1.default)(emailUser, "New Project Inquiry", htmlContent);
+                emailSent = true;
+                console.log("Email notification sent successfully");
+            }
+            catch (emailError) {
+                console.error("Failed to send email notification:", emailError);
+                // Don't fail the request if email fails
+            }
+        }
+        res.status(201).json({
+            message: `Inquiry saved successfully!${emailSent ? " Email notification sent." : " (Email notification failed)"}`,
+            requestId: savedRequest._id,
+            status: savedRequest.status,
+            emailSent,
+        });
     }
-
-    res.status(201).json({
-      message: `Inquiry saved successfully!${
-        emailSent ? " Email notification sent." : " (Email notification failed)"
-      }`,
-      requestId: savedRequest._id,
-      status: savedRequest.status,
-      emailSent,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
+    catch (error) {
+        next(error);
+    }
+});
+exports.sendProjectInquiry = sendProjectInquiry;
 // Get all project requests for dashboard
-export const getAllProjectRequests = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { status, page = 1, limit = 10 } = req.query;
-
-    const filter: any = {};
-    if (status && status !== "all") {
-      filter.status = status;
+const getAllProjectRequests = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { status, page = 1, limit = 10 } = req.query;
+        const filter = {};
+        if (status && status !== "all") {
+            filter.status = status;
+        }
+        const skip = (Number(page) - 1) * Number(limit);
+        const requests = yield ProjectDescription_1.default.find(filter)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(Number(limit));
+        const total = yield ProjectDescription_1.default.countDocuments(filter);
+        res.status(200).json({
+            message: "Project requests fetched successfully",
+            requests,
+            pagination: {
+                currentPage: Number(page),
+                totalPages: Math.ceil(total / Number(limit)),
+                totalRequests: total,
+                limit: Number(limit),
+            },
+        });
     }
-
-    const skip = (Number(page) - 1) * Number(limit);
-
-    const requests = await ProjectRequest.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit));
-
-    const total = await ProjectRequest.countDocuments(filter);
-
-    res.status(200).json({
-      message: "Project requests fetched successfully",
-      requests,
-      pagination: {
-        currentPage: Number(page),
-        totalPages: Math.ceil(total / Number(limit)),
-        totalRequests: total,
-        limit: Number(limit),
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
+    catch (error) {
+        next(error);
+    }
+});
+exports.getAllProjectRequests = getAllProjectRequests;
 // Get single project request
-export const getProjectRequest = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { id } = req.params;
-
-    const request = await ProjectRequest.findById(id);
-
-    if (!request) {
-      res.status(404).json({ message: "Project request not found" });
-      return;
+const getProjectRequest = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        const request = yield ProjectDescription_1.default.findById(id);
+        if (!request) {
+            res.status(404).json({ message: "Project request not found" });
+            return;
+        }
+        res.status(200).json({
+            message: "Project request fetched successfully",
+            request,
+        });
     }
-
-    res.status(200).json({
-      message: "Project request fetched successfully",
-      request,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
+    catch (error) {
+        next(error);
+    }
+});
+exports.getProjectRequest = getProjectRequest;
 // Reply to a project request
-export const replyToProjectRequest = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { id } = req.params;
-    const { replyMessage, subject } = req.body;
-
-    if (!replyMessage || !subject) {
-      res
-        .status(400)
-        .json({ message: "Reply message and subject are required." });
-      return;
-    }
-
-    const request = await ProjectRequest.findById(id);
-
-    if (!request) {
-      res.status(404).json({ message: "Project request not found" });
-      return;
-    }
-
-    // Update the request with reply information
-    request.isReplied = true;
-    request.replyMessage = replyMessage.trim();
-    request.repliedAt = new Date();
-    request.repliedBy = req.user?.name || req.user?.email || "Admin";
-    request.status = "replied";
-
-    await request.save();
-
-    // Prepare beautiful email content for the client
-    const clientEmailContent = `
+const replyToProjectRequest = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
+    try {
+        const { id } = req.params;
+        const { replyMessage, subject } = req.body;
+        if (!replyMessage || !subject) {
+            res
+                .status(400)
+                .json({ message: "Reply message and subject are required." });
+            return;
+        }
+        const request = yield ProjectDescription_1.default.findById(id);
+        if (!request) {
+            res.status(404).json({ message: "Project request not found" });
+            return;
+        }
+        // Update the request with reply information
+        request.isReplied = true;
+        request.replyMessage = replyMessage.trim();
+        request.repliedAt = new Date();
+        request.repliedBy = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.name) || ((_b = req.user) === null || _b === void 0 ? void 0 : _b.email) || "Admin";
+        request.status = "replied";
+        yield request.save();
+        // Prepare beautiful email content for the client
+        const clientEmailContent = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -588,15 +540,12 @@ export const replyToProjectRequest = async (
                 Dear <strong>${request.name}</strong>,
             </div>
             
-            <p>Thank you for your project inquiry submitted on <strong>${request.createdAt.toLocaleDateString(
-              "en-US",
-              {
-                weekday: "long",
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              }
-            )}</strong>. We appreciate your interest in our services!</p>
+            <p>Thank you for your project inquiry submitted on <strong>${request.createdAt.toLocaleDateString("en-US", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+        })}</strong>. We appreciate your interest in our services!</p>
             
             <div class="section">
                 <div class="section-title">Your Original Request Summary</div>
@@ -605,55 +554,44 @@ export const replyToProjectRequest = async (
                         ${request.serviceType}
                     </div>
                     
-                    ${
-                      request.selectedServices &&
-                      request.selectedServices.length
-                        ? `
+                    ${request.selectedServices &&
+            request.selectedServices.length
+            ? `
                     <div style="font-weight: 600; margin: 15px 0 10px 0; color: #374151;">Selected Services:</div>
                     <div class="services-grid">
                         ${request.selectedServices
-                          .map(
-                            (service: string) =>
-                              `<div class="service-item">✓ ${service}</div>`
-                          )
-                          .join("")}
+                .map((service) => `<div class="service-item">✓ ${service}</div>`)
+                .join("")}
                     </div>
                     `
-                        : ""
-                    }
+            : ""}
                     
-                    ${
-                      request.customServiceDescription
-                        ? `
+                    ${request.customServiceDescription
+            ? `
                     <div class="custom-info">
                         <strong>Custom Service Description:</strong><br>
                         ${request.customServiceDescription}
                     </div>
                     `
-                        : ""
-                    }
+            : ""}
                     
-                    ${
-                      request.customServiceNeeds
-                        ? `
+                    ${request.customServiceNeeds
+            ? `
                     <div class="custom-info">
                         <strong>Custom Service Needs:</strong><br>
                         ${request.customServiceNeeds}
                     </div>
                     `
-                        : ""
-                    }
+            : ""}
                     
-                    ${
-                      request.serviceSpecificOtherDescription
-                        ? `
+                    ${request.serviceSpecificOtherDescription
+            ? `
                     <div class="custom-info">
                         <strong>Additional Service Details:</strong><br>
                         ${request.serviceSpecificOtherDescription}
                     </div>
                     `
-                        : ""
-                    }
+            : ""}
                 </div>
             </div>
             
@@ -679,112 +617,92 @@ export const replyToProjectRequest = async (
 </body>
 </html>
         `;
-
-    // Send reply email to client (optional - don't fail if email fails)
-    let emailSent = false;
-    try {
-      await sendEmail(request.email, subject, clientEmailContent);
-      emailSent = true;
-      console.log(`Reply email sent to ${request.email}`);
-    } catch (emailError) {
-      console.error("Failed to send reply email:", emailError);
-      // Don't fail the request if email fails
+        // Send reply email to client (optional - don't fail if email fails)
+        let emailSent = false;
+        try {
+            yield (0, sendEmail_1.default)(request.email, subject, clientEmailContent);
+            emailSent = true;
+            console.log(`Reply email sent to ${request.email}`);
+        }
+        catch (emailError) {
+            console.error("Failed to send reply email:", emailError);
+            // Don't fail the request if email fails
+        }
+        res.status(200).json({
+            message: `Reply saved successfully!${emailSent ? " Email sent to client." : " (Email sending failed)"}`,
+            request: {
+                _id: request._id,
+                status: request.status,
+                isReplied: request.isReplied,
+                repliedAt: request.repliedAt,
+                replyMessage: request.replyMessage,
+            },
+            emailSent,
+        });
     }
-
-    res.status(200).json({
-      message: `Reply saved successfully!${
-        emailSent ? " Email sent to client." : " (Email sending failed)"
-      }`,
-      request: {
-        _id: request._id,
-        status: request.status,
-        isReplied: request.isReplied,
-        repliedAt: request.repliedAt,
-        replyMessage: request.replyMessage,
-      },
-      emailSent,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
+    catch (error) {
+        next(error);
+    }
+});
+exports.replyToProjectRequest = replyToProjectRequest;
 // Update project request status
-export const updateProjectRequestStatus = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-
-    if (!status) {
-      res.status(400).json({ message: "Status is required." });
-      return;
+const updateProjectRequestStatus = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+        if (!status) {
+            res.status(400).json({ message: "Status is required." });
+            return;
+        }
+        // Map frontend status values to backend values
+        const statusMapping = {
+            Pending: "pending",
+            pending: "pending",
+            "In-Progress": "in-review",
+            "in-progress": "in-review",
+            "in-review": "in-review",
+            Replied: "replied",
+            replied: "replied",
+            Completed: "completed",
+            completed: "completed",
+        };
+        const normalizedStatus = statusMapping[status];
+        if (!normalizedStatus) {
+            res.status(400).json({
+                message: `Invalid status value: ${status}. Valid values are: pending, in-review, replied, completed`,
+            });
+            return;
+        }
+        const request = yield ProjectDescription_1.default.findByIdAndUpdate(id, { status: normalizedStatus, updatedAt: new Date() }, { new: true });
+        if (!request) {
+            res.status(404).json({ message: "Project request not found" });
+            return;
+        }
+        res.status(200).json({
+            message: "Project request status updated successfully",
+            request,
+        });
     }
-
-    // Map frontend status values to backend values
-    const statusMapping: { [key: string]: string } = {
-      Pending: "pending",
-      pending: "pending",
-      "In-Progress": "in-review",
-      "in-progress": "in-review",
-      "in-review": "in-review",
-      Replied: "replied",
-      replied: "replied",
-      Completed: "completed",
-      completed: "completed",
-    };
-
-    const normalizedStatus = statusMapping[status];
-    if (!normalizedStatus) {
-      res.status(400).json({
-        message: `Invalid status value: ${status}. Valid values are: pending, in-review, replied, completed`,
-      });
-      return;
+    catch (error) {
+        next(error);
     }
-
-    const request = await ProjectRequest.findByIdAndUpdate(
-      id,
-      { status: normalizedStatus, updatedAt: new Date() },
-      { new: true }
-    );
-
-    if (!request) {
-      res.status(404).json({ message: "Project request not found" });
-      return;
-    }
-
-    res.status(200).json({
-      message: "Project request status updated successfully",
-      request,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
+});
+exports.updateProjectRequestStatus = updateProjectRequestStatus;
 // Delete project request
-export const deleteProjectRequest = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { id } = req.params;
-
-    const request = await ProjectRequest.findByIdAndDelete(id);
-
-    if (!request) {
-      res.status(404).json({ message: "Project request not found" });
-      return;
+const deleteProjectRequest = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        const request = yield ProjectDescription_1.default.findByIdAndDelete(id);
+        if (!request) {
+            res.status(404).json({ message: "Project request not found" });
+            return;
+        }
+        res.status(200).json({
+            message: "Project request deleted successfully",
+        });
     }
-
-    res.status(200).json({
-      message: "Project request deleted successfully",
-    });
-  } catch (error) {
-    next(error);
-  }
-};
+    catch (error) {
+        next(error);
+    }
+});
+exports.deleteProjectRequest = deleteProjectRequest;
