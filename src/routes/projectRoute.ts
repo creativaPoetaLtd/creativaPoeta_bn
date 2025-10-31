@@ -15,7 +15,7 @@ const projectRouter = express.Router();
 projectRouter.post("/send-inquiry", sendProjectInquiry);
 
 // Admin routes - require authentication (all users are admins)
-projectRouter.get("/",getAllProjectRequests);
+projectRouter.get("/",authenticateUser, adminOnly,getAllProjectRequests);
 projectRouter.get("/:id", authenticateUser, adminOnly, getProjectRequest);
 projectRouter.post(
   "/:id/reply",

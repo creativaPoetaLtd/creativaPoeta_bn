@@ -62,17 +62,52 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       { expiresIn: "1d" }
     );
 
-    res
-      .status(200)
-      .json({
-        token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-        },
+    res.status(200).json({
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+// Token verification endpoint for debugging
+export const verifyToken = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      res.status(400).json({
+        valid: false,
+        error: "No token provided or invalid header format",
       });
+      return;
+    }
+
+    const token = authHeader.split(" ")[1];
+
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      res.status(200).json({
+        valid: true,
+        decoded,
+        message: "Token is valid",
+      });
+    } catch (err: any) {
+      res.status(401).json({
+        valid: false,
+        error: err.message,
+        errorType: err.name,
+      });
+    }
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
