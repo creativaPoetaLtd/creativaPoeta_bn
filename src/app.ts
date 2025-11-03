@@ -7,7 +7,6 @@ dotenv.config();
 
 const app = express();
 
-// ✅ Use CORS once, with correct config
 app.use(
   cors({
     origin: ["http://localhost:5174", "https://creativapoeta.netlify.app"],
@@ -18,12 +17,10 @@ app.use(
 
 app.use(express.json());
 
-// ✅ Default route for Vercel
 app.get("/", (req, res) => {
   res.send("Creativa Poeta Backend is running ✅");
 });
 
-// ✅ API routes
 app.use("/api", routes);
 
 export default app;
