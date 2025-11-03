@@ -1,7 +1,6 @@
-import app from "./app";
 import mongoose from "mongoose";
+import app from "./app";
 
-const PORT = process.env.PORT || 5000;
 const MONGO_URI =
   process.env.MONGO_URI ||
   "mongodb+srv://izanyibukayvette:1cRUEABbqhJdWGZD@cluster0.mongodb.net/creativaPoeta_db?retryWrites=true&w=majority";
@@ -9,10 +8,7 @@ const MONGO_URI =
 let isConnected = false;
 
 async function connectDB() {
-  if (isConnected) {
-    console.log("⚡ Reusing existing MongoDB connection");
-    return;
-  }
+  if (isConnected) return;
 
   try {
     const db = await mongoose.connect(MONGO_URI, {
@@ -25,9 +21,8 @@ async function connectDB() {
   }
 }
 
-(async () => {
+// This makes it compatible with Vercel's serverless functions
+export default async function handler(req: any, res: any) {
   await connectDB();
-  app.listen(PORT, () => {
-    console.log(`🚀 Server is running on port ${PORT}`);
-  });
-})();
+  return app(req, res);
+}
