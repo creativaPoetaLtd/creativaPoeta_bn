@@ -7,11 +7,13 @@ dotenv.config();
 
 const app = express();
 
+// Allow all CORS requests - no restrictions
 app.use(
   cors({
-    origin: ["http://localhost:5174", "https://creativapoeta.netlify.app"],
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    credentials: true,
+    origin: "*", // Allow all origins
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],
+    allowedHeaders: "*", // Allow all headers
+    credentials: false, // Set to false when using origin: "*"
   })
 );
 
