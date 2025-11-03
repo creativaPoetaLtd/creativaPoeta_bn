@@ -21,7 +21,6 @@ async function connectDB() {
   }
 }
 
-// This makes it compatible with Vercel's serverless functions
 export default async function handler(req: any, res: any) {
   await connectDB();
   return app(req, res);
