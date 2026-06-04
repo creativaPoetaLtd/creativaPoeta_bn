@@ -3,9 +3,11 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const MONGO_URI =
-  process.env.MONGO_URI ||
-  "mongodb+srv://izanyibukayvette:1cRUEABbqhJdWGZD@cluster0.mongodb.net/creativaPoeta_db?retryWrites=true&w=majority";
+const MONGO_URI = process.env.MONGO_URI || "";
+
+if (!MONGO_URI) {
+  throw new Error("MONGO_URI environment variable is required");
+}
 
 async function fixCommentStructure() {
   try {

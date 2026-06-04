@@ -1,9 +1,11 @@
 import mongoose from "mongoose";
 import app from "./app";
 
-const MONGO_URI =
-  process.env.MONGO_URI ||
-  "mongodb+srv://izanyibukayvette:1cRUEABbqhJdWGZD@cluster0.mongodb.net/creativaPoeta_db?retryWrites=true&w=majority";
+const MONGO_URI = process.env.MONGO_URI || "";
+
+if (!MONGO_URI) {
+  throw new Error("MONGO_URI environment variable is required");
+}
 
 let isConnected = false;
 
@@ -15,9 +17,9 @@ async function connectDB() {
       serverSelectionTimeoutMS: 30000,
     });
     isConnected = !!db.connection.readyState;
-    console.log("✅ Connected to MongoDB");
+    console.log("Connected to MongoDB");
   } catch (err) {
-    console.error("❌ Database connection error:", err);
+    console.error("Database connection error:", err);
   }
 }
 
