@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import Blog, { BlogLanguage, BlogStatus, IBlog } from "../models/Blog";
 import { uploadToCloudinary } from "../utils/cloudinary";
 import { triggerFrontendBuild } from "../services/frontendBuildService";
+import { findRelatedBlogs } from "../services/blogRelatedService";
 import {
   BlogGenerationInput,
   evaluateDraftQuality,
@@ -425,7 +426,9 @@ export const getSingleBlog = async (
         }).select("title slug language")
       : [];
 
-    res.status(200).json({ blog, translations });
+    const relatedArticles = await findRelatedBlogs(blog.toObject(), 3);
+
+    res.status(200).json({ blog, translations, relatedArticles });
   } catch (error) {
     next(error);
   }
