@@ -6,6 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "dev:local": "ts-node-dev --respawn --transpile-only src/localServer.ts",
     "build": "npm install --legacy-peer-deps && tsc",
     "start": "node dist/server.js"
   },
@@ -15,6 +16,7 @@
   "dependencies": {
     "@types/multer": "^1.4.12",
     "bcrypt": "^5.1.1",
+    "cheerio": "^1.2.0",
     "cloudinary": "^1.21.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",

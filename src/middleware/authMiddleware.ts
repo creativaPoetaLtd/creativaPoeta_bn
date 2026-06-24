@@ -5,6 +5,15 @@ dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET as string;
 
+type AdminRole = "super_admin" | "admin" | "editor" | "viewer";
+
+interface AuthTokenPayload {
+  _id: string;
+  email: string;
+  role: AdminRole;
+  isActive?: boolean;
+}
+
 declare module "express-serve-static-core" {
   interface Request {
     user?: any;
@@ -39,8 +48,14 @@ export const authenticateUser = (
         .json({ message: "Internal server error. JWT secret is not defined." });
       return;
     }
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded; // Ensure `decoded` contains necessary info
+    const decoded = jwt.verify(token, JWT_SECRET) as AuthTokenPayload;
+
+    if (decoded.isActive === false) {
+      res.status(403).json({ message: "Account is disabled." });
+      return;
+    }
+
+    req.user = decoded;
     next();
   } catch (err: any) {
     console.error("Token verification error:", err.message);
@@ -59,7 +74,6 @@ export const authenticateUser = (
   }
 };
 
-// Middleware for role-based access (simplified - all users are admins)
 export const authorizeRoles = (roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user) {
@@ -69,13 +83,15 @@ export const authorizeRoles = (roles: string[]) => {
       return;
     }
 
-    // Since all users are admins, just check if user is authenticated
-    // No need to check roles since everyone is admin
+    if (!roles.includes(req.user.role)) {
+      res.status(403).json({ message: "Access denied. Insufficient role." });
+      return;
+    }
+
     next();
   };
 };
 
-// Simplified admin-only middleware (since all users are admins)
 export const adminOnly = (
   req: Request,
   res: Response,
@@ -88,6 +104,30 @@ export const adminOnly = (
     return;
   }
 
-  // All authenticated users are admins
+  if (!["super_admin", "admin"].includes(req.user.role)) {
+    res.status(403).json({ message: "Access denied. Admin role required." });
+    return;
+  }
+
+  next();
+};
+
+export const superAdminOnly = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  if (!req.user) {
+    res
+      .status(401)
+      .json({ message: "Access denied. Super admin authentication required." });
+    return;
+  }
+
+  if (req.user.role !== "super_admin") {
+    res.status(403).json({ message: "Access denied. Super admin role required." });
+    return;
+  }
+
   next();
 };
