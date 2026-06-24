@@ -1,17 +1,41 @@
 import express from "express";
 import {
-  createBlog,
-  fetchBlogs,
-  getSingleBlog,
-  updateBlog,
   addComment,
-  getComments,
+  createBlog,
+  deleteBlog,
   deleteComment,
+  fetchAdminBlogs,
+  fetchBlogs,
+  getComments,
+  getSingleBlog,
+  generateProgrammaticBlogs,
+  rebuildBlogSeo,
+  updateBlog,
 } from "../controllers/BlogController";
-import { authenticateUser, adminOnly } from "../middleware/authMiddleware";
+import { adminOnly, authenticateUser } from "../middleware/authMiddleware";
 import { upload } from "../utils/multer";
+
 const BlogRouter = express.Router();
 
+BlogRouter.get("/", fetchBlogs);
+BlogRouter.get(
+  "/admin",
+  authenticateUser,
+  adminOnly,
+  fetchAdminBlogs
+);
+BlogRouter.post(
+  "/admin/rebuild",
+  authenticateUser,
+  adminOnly,
+  rebuildBlogSeo
+);
+BlogRouter.post(
+  "/admin/generate",
+  authenticateUser,
+  adminOnly,
+  generateProgrammaticBlogs
+);
 BlogRouter.post(
   "/",
   authenticateUser,
@@ -19,8 +43,6 @@ BlogRouter.post(
   upload.single("image"),
   createBlog
 );
-BlogRouter.get("/", fetchBlogs);
-BlogRouter.get("/:id", getSingleBlog);
 BlogRouter.patch(
   "/:id",
   authenticateUser,
@@ -28,8 +50,12 @@ BlogRouter.patch(
   upload.single("image"),
   updateBlog
 );
-
-// Comment routes - no authentication required
+BlogRouter.delete(
+  "/:id",
+  authenticateUser,
+  adminOnly,
+  deleteBlog
+);
 BlogRouter.post("/:id/comment", addComment);
 BlogRouter.get("/:id/comments", getComments);
 BlogRouter.delete(
@@ -38,5 +64,6 @@ BlogRouter.delete(
   adminOnly,
   deleteComment
 );
+BlogRouter.get("/:identifier", getSingleBlog);
 
 export default BlogRouter;
