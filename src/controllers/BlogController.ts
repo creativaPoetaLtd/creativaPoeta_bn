@@ -245,7 +245,7 @@ export const generateProgrammaticBlogs = async (
     const intent = ["informational", "commercial", "comparison", "local"].includes(requestedIntent)
       ? requestedIntent as BlogGenerationInput["intent"]
       : "informational";
-    const count = Math.min(6, Math.max(1, Number(req.body.count) || 1));
+    const count = Math.min(10, Math.max(1, Number(req.body.count) || 1));
     const rawKeywords: unknown[] = Array.isArray(req.body.keywords)
       ? req.body.keywords
       : String(req.body.keywords || "").split(/[\n,;]/);
