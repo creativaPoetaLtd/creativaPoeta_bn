@@ -7,6 +7,7 @@ import contactRouter from "./contactRoutes";
 import CareerRouter from "./CareerRoute";
 import { testEmail } from "../controllers/emailTestController";
 import visibilityAuditRouter from "./visibilityAuditRoutes";
+import emailRouter from "./emailRoutes";
 
 const router = express.Router();
 
@@ -15,6 +16,7 @@ router.use("/blogs", BlogRouter);
 router.use("/project", projectRouter);
 router.use("/job", jobRouter);
 router.use("/contact", contactRouter);
+router.use("/emails", emailRouter);
 router.use("/jobs", CareerRouter);
 router.use("/visibility-audit", visibilityAuditRouter);
 
