@@ -20,6 +20,10 @@ export interface IEmailMessage extends Document {
   receivedAt: Date;
   syncedAt: Date;
   rawSize?: number;
+  replyMessage?: string;
+  replySubject?: string;
+  repliedAt?: Date;
+  repliedBy?: string;
 }
 
 const EmailMessageSchema: Schema = new Schema(
@@ -45,6 +49,10 @@ const EmailMessageSchema: Schema = new Schema(
     receivedAt: { type: Date, default: Date.now },
     syncedAt: { type: Date, default: Date.now },
     rawSize: { type: Number },
+    replyMessage: { type: String },
+    replySubject: { type: String, trim: true },
+    repliedAt: { type: Date },
+    repliedBy: { type: String, trim: true },
   },
   { timestamps: true }
 );

@@ -1,8 +1,13 @@
 import { Request, Response } from "express";
 import EmailMessage from "../models/EmailMessage";
 import { syncConfiguredMailboxes } from "../services/emailSyncService";
+import sendEmail from "../utils/sendEmail";
+import { escapeHtml, formatParagraphs } from "../utils/emailTemplate";
 
 const allowedStatuses = ["new", "read", "replied", "archived"];
+
+const normalizeReplySubject = (subject: string) =>
+  /^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim() || "Votre message"}`;
 
 export const syncEmails = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -98,6 +103,69 @@ export const getEmail = async (req: Request, res: Response): Promise<void> => {
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to fetch email",
+      error: error?.message || "Unknown error",
+    });
+  }
+};
+
+export const replyToEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { replyMessage, subject } = req.body;
+
+    if (!replyMessage || !String(replyMessage).trim()) {
+      res.status(400).json({ message: "Reply message is required" });
+      return;
+    }
+
+    const email = await EmailMessage.findById(req.params.id);
+
+    if (!email) {
+      res.status(404).json({ message: "Email not found" });
+      return;
+    }
+
+    if (!email.fromEmail) {
+      res.status(400).json({ message: "This email has no sender address." });
+      return;
+    }
+
+    const replySubject = normalizeReplySubject(subject || email.subject);
+    const cleanMessage = String(replyMessage).trim();
+    const originalText = email.text || email.preview || "";
+    const content = `
+      <p>Bonjour${email.fromName ? ` ${escapeHtml(email.fromName)}` : ""},</p>
+      <div style="background:#fff7db;border-left:5px solid #eeba2b;border-radius:10px;padding:18px;margin:18px 0;color:#071a33;">
+        ${formatParagraphs(cleanMessage)}
+      </div>
+      <p>Vous pouvez répondre directement à cet email si vous souhaitez préciser quelque chose.</p>
+      <hr style="border:0;border-top:1px solid #dfe7f2;margin:26px 0;" />
+      <p style="font-size:13px;color:#64748b;margin-bottom:8px;"><strong>Message original</strong></p>
+      <div style="font-size:13px;color:#64748b;background:#f8fafc;border-radius:10px;padding:14px;">
+        <p style="margin:0 0 8px;"><strong>De:</strong> ${escapeHtml(email.fromEmail)}</p>
+        <p style="margin:0 0 8px;"><strong>Sujet:</strong> ${escapeHtml(email.subject)}</p>
+        ${formatParagraphs(originalText.slice(0, 1600))}
+      </div>
+    `;
+
+    await sendEmail(email.fromEmail, replySubject, content, {
+      title: replySubject,
+      preheader: cleanMessage.slice(0, 130),
+    });
+
+    email.status = "replied";
+    email.replyMessage = cleanMessage;
+    email.replySubject = replySubject;
+    email.repliedAt = new Date();
+    email.repliedBy = (req.user as any)?.name || (req.user as any)?.email || "Admin";
+    await email.save();
+
+    res.status(200).json({
+      message: "Reply sent successfully",
+      email,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      message: "Failed to send email reply",
       error: error?.message || "Unknown error",
     });
   }
