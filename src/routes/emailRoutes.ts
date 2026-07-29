@@ -1,5 +1,6 @@
 import express from "express";
 import {
+  cronSyncEmails,
   deleteEmail,
   deleteOutboundEmail,
   getEmail,
@@ -16,6 +17,9 @@ import {
 import { adminOnly, authenticateUser } from "../middleware/authMiddleware";
 
 const router = express.Router();
+
+router.post("/cron-sync", cronSyncEmails);
+router.get("/cron-sync", cronSyncEmails);
 
 router.use(authenticateUser, adminOnly);
 

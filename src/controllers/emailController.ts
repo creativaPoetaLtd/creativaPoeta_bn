@@ -23,6 +23,77 @@ const parseEmailList = (value: unknown): string[] => {
 
 const getAdminName = (req: Request) =>
   (req.user as any)?.name || (req.user as any)?.email || "Admin";
+const getAdminNotificationEmail = () =>
+  process.env.ADMIN_NOTIFICATION_EMAIL ||
+  process.env.ADMIN_EMAIL ||
+  process.env.EMAIL_USER ||
+  "creativapoeta@gmail.com";
+
+const isValidCronToken = (req: Request) => {
+  const expected = process.env.EMAIL_SYNC_CRON_TOKEN;
+  if (!expected) return false;
+
+  const authorization = String(req.headers.authorization || "");
+  const bearerToken = authorization.startsWith("Bearer ")
+    ? authorization.slice("Bearer ".length).trim()
+    : "";
+  const headerToken = String(req.headers["x-cron-token"] || "");
+  const queryToken = String(req.query.token || "");
+
+  return [bearerToken, headerToken, queryToken].some((token) => token && token === expected);
+};
+
+const notifyAdminAboutNewEmails = async (syncStartedAt: Date, importedCount: number) => {
+  if (importedCount <= 0) return;
+
+  const newEmails = await EmailMessage.find({ createdAt: { $gte: syncStartedAt } })
+    .sort({ receivedAt: -1 })
+    .limit(8);
+
+  const rows = newEmails
+    .map((email) => {
+      const sender = email.fromName
+        ? `${escapeHtml(email.fromName)} &lt;${escapeHtml(email.fromEmail || "")}&gt;`
+        : escapeHtml(email.fromEmail || "Expediteur inconnu");
+
+      return `
+        <tr>
+          <td style="padding:10px 0;border-bottom:1px solid #e5edf7;">
+            <strong>${escapeHtml(email.subject || "(Sans sujet)")}</strong><br />
+            <span style="color:#64748b;font-size:13px;">${sender}</span><br />
+            <span style="color:#64748b;font-size:13px;">Boite: ${escapeHtml(email.mailboxAddress || email.mailbox)}</span>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const adminUrl =
+    process.env.ADMIN_EMAILS_URL ||
+    process.env.FRONTEND_ADMIN_EMAILS_URL ||
+    "https://creativapoeta.com/secure-admin-dashboard-2024/emails";
+
+  const content = `
+    <p>Un ou plusieurs nouveaux emails viennent d'etre importes dans CP Mail.</p>
+    <p><strong>${importedCount}</strong> nouveau(x) message(s) detecte(s).</p>
+    ${
+      rows
+        ? `<table style="width:100%;border-collapse:collapse;margin:18px 0;">${rows}</table>`
+        : ""
+    }
+    <p>
+      <a href="${escapeHtml(adminUrl)}" style="display:inline-block;background:#f2b705;color:#071a33;text-decoration:none;font-weight:800;padding:12px 18px;border-radius:999px;">
+        Ouvrir CP Mail
+      </a>
+    </p>
+  `;
+
+  await sendEmail(getAdminNotificationEmail(), "Nouveau mail recu dans CP Mail", content, {
+    title: "Nouveau mail recu dans CP Mail",
+    preheader: `${importedCount} nouveau(x) message(s) dans Creativa Poeta Mail.`,
+    replyTo: process.env.REPLY_TO_EMAIL || process.env.SMTP_FROM_EMAIL || "contact@creativapoeta.com",
+  });
+};
 
 const getOutboundPayload = (req: Request) => ({
   to: parseEmailList(req.body?.to),
@@ -67,6 +138,41 @@ export const syncEmails = async (req: Request, res: Response): Promise<void> => 
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to sync emails",
+      error: error?.message || "Unknown error",
+    });
+  }
+};
+export const cronSyncEmails = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!process.env.EMAIL_SYNC_CRON_TOKEN) {
+      res.status(503).json({
+        message: "Email cron sync is disabled. Configure EMAIL_SYNC_CRON_TOKEN first.",
+      });
+      return;
+    }
+
+    if (!isValidCronToken(req)) {
+      res.status(401).json({ message: "Invalid cron token" });
+      return;
+    }
+
+    const limit = Number(req.body?.limit || req.query.limit || 50);
+    const syncStartedAt = new Date();
+    const result = await syncConfiguredMailboxes(limit);
+
+    try {
+      await notifyAdminAboutNewEmails(syncStartedAt, result.imported);
+    } catch (notificationError) {
+      console.error("Email sync notification failed:", notificationError);
+    }
+
+    res.status(200).json({
+      message: "Email cron sync completed",
+      ...result,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      message: "Failed to run email cron sync",
       error: error?.message || "Unknown error",
     });
   }
