@@ -29,12 +29,12 @@ const getMailboxConfigs = (): MailboxConfig[] => {
   const configs = [
     {
       key: "be",
-      address: process.env.IMAP_BE_USER,
+      address: process.env.IMAP_BE_USER || process.env.IMAP_BE_ADDRESS,
       password: process.env.IMAP_BE_PASSWORD,
     },
     {
       key: "global",
-      address: process.env.IMAP_GLOBAL_USER,
+      address: process.env.IMAP_GLOBAL_USER || process.env.IMAP_GLOBAL_ADDRESS,
       password: process.env.IMAP_GLOBAL_PASSWORD,
     },
   ];
