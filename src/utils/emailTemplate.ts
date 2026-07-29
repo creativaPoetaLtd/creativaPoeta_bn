@@ -55,7 +55,7 @@ export const renderBrandedEmail = ({
             <tr>
               <td align="left" style="padding:0 0 26px;">
                 <a href="${SITE_URL}" style="display:inline-block;text-decoration:none;color:#101828;">
-                  <span style="display:block;font-size:24px;line-height:1;font-weight:800;letter-spacing:-.04em;color:#101828;white-space:nowrap;">creativapoeta</span>
+                  <span style="display:block;font-size:24px;line-height:1;font-weight:800;letter-spacing:-.04em;color:#101828;white-space:nowrap;">Creativa Poeta</span>
                   <span style="display:block;margin-top:5px;font-size:10px;line-height:1.2;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#b4852b;white-space:nowrap;">inspired innovation</span>
                 </a>
               </td>
