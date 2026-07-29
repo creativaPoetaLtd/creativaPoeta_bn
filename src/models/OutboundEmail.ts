@@ -1,4 +1,4 @@
-﻿import mongoose, { Document, Schema } from "mongoose";
+import mongoose, { Document, Schema } from "mongoose";
 
 export type OutboundEmailFolder = "sent" | "draft";
 export type OutboundEmailStatus = "draft" | "sent" | "failed";
@@ -11,6 +11,7 @@ export interface IOutboundEmail extends Document {
   bcc: string[];
   subject: string;
   body: string;
+  signature?: string;
   error?: string;
   sentAt?: Date;
   createdBy?: string;
@@ -26,6 +27,7 @@ const OutboundEmailSchema: Schema = new Schema(
     bcc: [{ type: String, trim: true, lowercase: true }],
     subject: { type: String, trim: true, default: "" },
     body: { type: String, default: "" },
+    signature: { type: String, default: "" },
     error: { type: String },
     sentAt: { type: Date },
     createdBy: { type: String, trim: true },
@@ -36,6 +38,6 @@ const OutboundEmailSchema: Schema = new Schema(
 
 OutboundEmailSchema.index({ folder: 1, updatedAt: -1 });
 OutboundEmailSchema.index({ status: 1, updatedAt: -1 });
-OutboundEmailSchema.index({ subject: "text", body: "text", to: "text" });
+OutboundEmailSchema.index({ subject: "text", body: "text", signature: "text", to: "text" });
 
 export default mongoose.model<IOutboundEmail>("OutboundEmail", OutboundEmailSchema);

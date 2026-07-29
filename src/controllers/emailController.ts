@@ -101,6 +101,7 @@ const getOutboundPayload = (req: Request) => ({
   bcc: parseEmailList(req.body?.bcc),
   subject: String(req.body?.subject || "").trim(),
   body: String(req.body?.body || "").trim(),
+  signature: String(req.body?.signature || "").trim(),
 });
 
 const sendOutboundPayload = async (
@@ -116,6 +117,7 @@ const sendOutboundPayload = async (
     bcc: payload.bcc,
     title: payload.subject,
     preheader: payload.body.slice(0, 130),
+    signature: payload.signature,
   });
 
   return {
@@ -383,6 +385,7 @@ export const sendDraftEmail = async (req: Request, res: Response): Promise<void>
           bcc: draft.bcc || [],
           subject: draft.subject || "",
           body: draft.body || "",
+          signature: draft.signature || "",
         },
         req
       );
@@ -429,7 +432,7 @@ export const deleteOutboundEmail = async (req: Request, res: Response): Promise<
 
 export const replyToEmail = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { replyMessage, subject } = req.body;
+    const { replyMessage, subject, signature } = req.body;
 
     if (!replyMessage || !String(replyMessage).trim()) {
       res.status(400).json({ message: "Reply message is required" });
@@ -453,13 +456,10 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
     const originalText = email.text || email.preview || "";
     const content = `
       <p>Bonjour${email.fromName ? ` ${escapeHtml(email.fromName)}` : ""},</p>
-      <div style="background:#fff7db;border-left:5px solid #eeba2b;border-radius:10px;padding:18px;margin:18px 0;color:#071a33;">
-        ${formatParagraphs(cleanMessage)}
-      </div>
+      ${formatParagraphs(cleanMessage)}
       <p>Vous pouvez repondre directement a cet email si vous souhaitez preciser quelque chose.</p>
-      <hr style="border:0;border-top:1px solid #dfe7f2;margin:26px 0;" />
-      <p style="font-size:13px;color:#64748b;margin-bottom:8px;"><strong>Message original</strong></p>
-      <div style="font-size:13px;color:#64748b;background:#f8fafc;border-radius:10px;padding:14px;">
+      <p style="font-size:13px;color:#64748b;margin:24px 0 8px;"><strong>Message original</strong></p>
+      <div style="font-size:13px;color:#64748b;">
         <p style="margin:0 0 8px;"><strong>De:</strong> ${escapeHtml(email.fromEmail)}</p>
         <p style="margin:0 0 8px;"><strong>Sujet:</strong> ${escapeHtml(email.subject)}</p>
         ${formatParagraphs(originalText.slice(0, 1600))}
@@ -469,6 +469,7 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
     await sendEmail(email.fromEmail, replySubject, content, {
       title: replySubject,
       preheader: cleanMessage.slice(0, 130),
+      signature: String(signature || "").trim(),
     });
 
     email.status = "replied";

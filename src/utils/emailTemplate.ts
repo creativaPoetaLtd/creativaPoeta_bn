@@ -2,6 +2,7 @@ interface BrandedEmailOptions {
   preheader?: string;
   title?: string;
   content: string;
+  signature?: string;
 }
 
 const SITE_URL = "https://creativapoeta.com";
@@ -24,10 +25,18 @@ export const formatParagraphs = (value = "") =>
     .map((paragraph) => `<p style="margin:0 0 14px;">${paragraph}</p>`)
     .join("");
 
+const renderSignature = (signature?: string) => {
+  const cleanSignature = String(signature || "").trim();
+  if (!cleanSignature) return "";
+
+  return `<div style="margin:0 0 10px;color:#b4852b;font-size:16px;font-weight:800;">${formatParagraphs(cleanSignature)}</div>`;
+};
+
 export const renderBrandedEmail = ({
   preheader = "Message de Creativa Poeta",
   title,
   content,
+  signature,
 }: BrandedEmailOptions) => `<!doctype html>
 <html lang="fr">
   <head>
@@ -58,8 +67,8 @@ export const renderBrandedEmail = ({
             </tr>
             <tr>
               <td style="padding:0 0 4px;color:#526074;font-size:14px;line-height:1.65;">
-                <div style="margin:0 0 4px;color:#344054;font-size:15px;font-style:italic;">Cordialement,</div>
-                <div style="margin:0 0 10px;color:#b4852b;font-size:16px;font-weight:800;">The Creativa Poeta Team</div>
+                <div style="margin:0 0 6px;color:#344054;font-size:15px;font-style:italic;">Best regards,</div>
+                ${renderSignature(signature)}
                 <div style="margin:0;">
                   <a href="mailto:${CONTACT_EMAIL}" style="color:#526074;text-decoration:none;word-break:break-word;">${CONTACT_EMAIL}</a>
                 </div>

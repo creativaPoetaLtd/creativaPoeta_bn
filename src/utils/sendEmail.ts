@@ -14,6 +14,7 @@ interface SendEmailOptions {
   preheader?: string;
   title?: string;
   wrap?: boolean;
+  signature?: string;
 }
 
 const isConfigured = (value?: string) => Boolean(value && value.trim());
@@ -91,6 +92,7 @@ const sendEmail = async (
             title: options.title || subject,
             preheader: options.preheader || stripHtml(htmlContent).slice(0, 130),
             content: htmlContent,
+            signature: options.signature,
           });
 
     const result = await transporter.sendMail({
