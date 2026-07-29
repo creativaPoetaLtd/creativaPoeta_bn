@@ -4,8 +4,15 @@ import { renderBrandedEmail } from "./emailTemplate";
 
 dotenv.config();
 
+interface SendEmailAttachment {
+  filename: string;
+  path?: string;
+  content?: Buffer;
+  contentType?: string;
+}
+
 interface SendEmailOptions {
-  attachments?: { filename: string; path: string }[];
+  attachments?: SendEmailAttachment[];
   cc?: string[];
   bcc?: string[];
   fromEmail?: string;
@@ -31,7 +38,7 @@ const sendEmail = async (
   to: string | string[],
   subject: string,
   htmlContent: string,
-  attachmentsOrOptions?: { filename: string; path: string }[] | SendEmailOptions
+  attachmentsOrOptions?: SendEmailAttachment[] | SendEmailOptions
 ): Promise<void> => {
   try {
     const options: SendEmailOptions = Array.isArray(attachmentsOrOptions)

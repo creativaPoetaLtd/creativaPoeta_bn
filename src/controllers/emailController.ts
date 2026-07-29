@@ -6,6 +6,8 @@ import sendEmail from "../utils/sendEmail";
 import { escapeHtml, formatParagraphs } from "../utils/emailTemplate";
 
 const allowedStatuses = ["new", "read", "replied", "archived"];
+const MAX_ATTACHMENT_TOTAL_BYTES = 8 * 1024 * 1024;
+const MAX_ATTACHMENT_COUNT = 8;
 
 const normalizeReplySubject = (subject: string) =>
   /^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim() || "Votre message"}`;
@@ -103,7 +105,34 @@ const getOutboundPayload = (req: Request) => ({
   body: String(req.body?.body || "").trim(),
   signature: String(req.body?.signature || "").trim(),
 });
+const getUploadedFiles = (req: Request): Express.Multer.File[] =>
+  Array.isArray(req.files) ? (req.files as Express.Multer.File[]) : [];
 
+const getUploadedAttachments = (req: Request) => {
+  const files = getUploadedFiles(req);
+
+  if (files.length > MAX_ATTACHMENT_COUNT) {
+    throw new Error(`Maximum ${MAX_ATTACHMENT_COUNT} attachments are allowed.`);
+  }
+
+  const totalSize = files.reduce((total, file) => total + file.size, 0);
+  if (totalSize > MAX_ATTACHMENT_TOTAL_BYTES) {
+    throw new Error("Attachments are too large. Maximum total size is 8 MB.");
+  }
+
+  return {
+    mailAttachments: files.map((file) => ({
+      filename: file.originalname,
+      content: file.buffer,
+      contentType: file.mimetype,
+    })),
+    metadata: files.map((file) => ({
+      filename: file.originalname,
+      mimeType: file.mimetype,
+      size: file.size,
+    })),
+  };
+};
 const sendOutboundPayload = async (
   payload: ReturnType<typeof getOutboundPayload>,
   req: Request
@@ -112,18 +141,22 @@ const sendOutboundPayload = async (
   if (!payload.subject) throw new Error("Subject is required.");
   if (!payload.body) throw new Error("Message body is required.");
 
+  const { mailAttachments, metadata } = getUploadedAttachments(req);
+
   await sendEmail(payload.to, payload.subject, formatParagraphs(payload.body), {
     cc: payload.cc,
     bcc: payload.bcc,
     title: payload.subject,
     preheader: payload.body.slice(0, 130),
     signature: payload.signature,
+    attachments: mailAttachments,
   });
 
   return {
     ...payload,
     folder: "sent" as const,
     status: "sent" as const,
+    attachments: metadata,
     sentAt: new Date(),
     updatedBy: getAdminName(req),
   };
