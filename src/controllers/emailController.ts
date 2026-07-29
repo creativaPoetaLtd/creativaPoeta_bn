@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import EmailMessage from "../models/EmailMessage";
+import OutboundEmail from "../models/OutboundEmail";
 import { syncConfiguredMailboxes } from "../services/emailSyncService";
 import sendEmail from "../utils/sendEmail";
 import { escapeHtml, formatParagraphs } from "../utils/emailTemplate";
@@ -8,6 +9,52 @@ const allowedStatuses = ["new", "read", "replied", "archived"];
 
 const normalizeReplySubject = (subject: string) =>
   /^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim() || "Votre message"}`;
+
+const parseEmailList = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
+  }
+
+  return String(value || "")
+    .split(/[,\n;]/)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+};
+
+const getAdminName = (req: Request) =>
+  (req.user as any)?.name || (req.user as any)?.email || "Admin";
+
+const getOutboundPayload = (req: Request) => ({
+  to: parseEmailList(req.body?.to),
+  cc: parseEmailList(req.body?.cc),
+  bcc: parseEmailList(req.body?.bcc),
+  subject: String(req.body?.subject || "").trim(),
+  body: String(req.body?.body || "").trim(),
+});
+
+const sendOutboundPayload = async (
+  payload: ReturnType<typeof getOutboundPayload>,
+  req: Request
+) => {
+  if (!payload.to.length) throw new Error("At least one recipient is required.");
+  if (!payload.subject) throw new Error("Subject is required.");
+  if (!payload.body) throw new Error("Message body is required.");
+
+  await sendEmail(payload.to, payload.subject, formatParagraphs(payload.body), {
+    cc: payload.cc,
+    bcc: payload.bcc,
+    title: payload.subject,
+    preheader: payload.body.slice(0, 130),
+  });
+
+  return {
+    ...payload,
+    folder: "sent" as const,
+    status: "sent" as const,
+    sentAt: new Date(),
+    updatedBy: getAdminName(req),
+  };
+};
 
 export const syncEmails = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -32,16 +79,10 @@ export const getEmails = async (req: Request, res: Response): Promise<void> => {
     const status = String(req.query.status || "all");
     const mailbox = String(req.query.mailbox || "all");
     const search = String(req.query.search || "").trim();
-
     const filter: any = {};
 
-    if (allowedStatuses.includes(status)) {
-      filter.status = status;
-    }
-
-    if (mailbox !== "all") {
-      filter.mailbox = mailbox;
-    }
+    if (allowedStatuses.includes(status)) filter.status = status;
+    if (mailbox !== "all") filter.mailbox = mailbox;
 
     if (search) {
       filter.$or = [
@@ -85,6 +126,55 @@ export const getEmails = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
+export const getOutboundEmails = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const page = Math.max(1, Number(req.query.page || 1));
+    const limit = Math.max(1, Math.min(Number(req.query.limit || 25), 100));
+    const folder = req.query.folder === "sent" ? "sent" : "draft";
+    const search = String(req.query.search || "").trim();
+    const filter: any = { folder };
+
+    if (search) {
+      filter.$or = [
+        { subject: { $regex: search, $options: "i" } },
+        { body: { $regex: search, $options: "i" } },
+        { to: { $regex: search, $options: "i" } },
+        { cc: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const skip = (page - 1) * limit;
+    const [emails, totalEmails, counts] = await Promise.all([
+      OutboundEmail.find(filter).sort({ updatedAt: -1 }).skip(skip).limit(limit),
+      OutboundEmail.countDocuments(filter),
+      OutboundEmail.aggregate([{ $group: { _id: "$folder", count: { $sum: 1 } } }]),
+    ]);
+
+    res.status(200).json({
+      message: "Outbound emails fetched successfully",
+      emails,
+      metrics: counts.reduce(
+        (acc: Record<string, number>, item: { _id: string; count: number }) => {
+          acc[item._id] = item.count;
+          return acc;
+        },
+        {}
+      ),
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalEmails / limit) || 1,
+        totalEmails,
+        limit,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      message: "Failed to fetch outbound emails",
+      error: error?.message || "Unknown error",
+    });
+  }
+};
+
 export const getEmail = async (req: Request, res: Response): Promise<void> => {
   try {
     const email = await EmailMessage.findById(req.params.id);
@@ -103,6 +193,129 @@ export const getEmail = async (req: Request, res: Response): Promise<void> => {
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to fetch email",
+      error: error?.message || "Unknown error",
+    });
+  }
+};
+
+export const saveDraftEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const payload = getOutboundPayload(req);
+    const email = await OutboundEmail.create({
+      ...payload,
+      folder: "draft",
+      status: "draft",
+      createdBy: getAdminName(req),
+      updatedBy: getAdminName(req),
+    });
+
+    res.status(201).json({ message: "Draft saved", email });
+  } catch (error: any) {
+    res.status(500).json({
+      message: "Failed to save draft",
+      error: error?.message || "Unknown error",
+    });
+  }
+};
+
+export const updateDraftEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const payload = getOutboundPayload(req);
+    const email = await OutboundEmail.findOneAndUpdate(
+      { _id: req.params.id, folder: "draft" },
+      { ...payload, updatedBy: getAdminName(req) },
+      { new: true }
+    );
+
+    if (!email) {
+      res.status(404).json({ message: "Draft not found" });
+      return;
+    }
+
+    res.status(200).json({ message: "Draft updated", email });
+  } catch (error: any) {
+    res.status(500).json({
+      message: "Failed to update draft",
+      error: error?.message || "Unknown error",
+    });
+  }
+};
+
+export const sendComposedEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const payload = getOutboundPayload(req);
+    const sentPayload = await sendOutboundPayload(payload, req);
+    const draftId = String(req.body?.draftId || "").trim();
+
+    const email = draftId
+      ? await OutboundEmail.findByIdAndUpdate(draftId, sentPayload, { new: true })
+      : await OutboundEmail.create({ ...sentPayload, createdBy: getAdminName(req) });
+
+    res.status(200).json({ message: "Email sent", email });
+  } catch (error: any) {
+    res.status(400).json({
+      message: "Failed to send email",
+      error: error?.message || "Unknown error",
+    });
+  }
+};
+
+export const sendDraftEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const draft = await OutboundEmail.findOne({ _id: req.params.id, folder: "draft" });
+
+    if (!draft) {
+      res.status(404).json({ message: "Draft not found" });
+      return;
+    }
+
+    try {
+      const sentPayload = await sendOutboundPayload(
+        {
+          to: draft.to || [],
+          cc: draft.cc || [],
+          bcc: draft.bcc || [],
+          subject: draft.subject || "",
+          body: draft.body || "",
+        },
+        req
+      );
+
+      Object.assign(draft, sentPayload);
+      await draft.save();
+      res.status(200).json({ message: "Draft sent", email: draft });
+    } catch (sendError: any) {
+      draft.status = "failed";
+      draft.error = sendError?.message || "Unknown error";
+      draft.updatedBy = getAdminName(req);
+      await draft.save();
+      res.status(400).json({
+        message: "Failed to send draft",
+        error: draft.error,
+        email: draft,
+      });
+    }
+  } catch (error: any) {
+    res.status(500).json({
+      message: "Failed to send draft",
+      error: error?.message || "Unknown error",
+    });
+  }
+};
+
+export const deleteOutboundEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const email = await OutboundEmail.findByIdAndDelete(req.params.id);
+
+    if (!email) {
+      res.status(404).json({ message: "Outbound email not found" });
+      return;
+    }
+
+    res.status(200).json({ message: "Email deleted" });
+  } catch (error: any) {
+    res.status(500).json({
+      message: "Failed to delete outbound email",
       error: error?.message || "Unknown error",
     });
   }
@@ -137,7 +350,7 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
       <div style="background:#fff7db;border-left:5px solid #eeba2b;border-radius:10px;padding:18px;margin:18px 0;color:#071a33;">
         ${formatParagraphs(cleanMessage)}
       </div>
-      <p>Vous pouvez répondre directement à cet email si vous souhaitez préciser quelque chose.</p>
+      <p>Vous pouvez repondre directement a cet email si vous souhaitez preciser quelque chose.</p>
       <hr style="border:0;border-top:1px solid #dfe7f2;margin:26px 0;" />
       <p style="font-size:13px;color:#64748b;margin-bottom:8px;"><strong>Message original</strong></p>
       <div style="font-size:13px;color:#64748b;background:#f8fafc;border-radius:10px;padding:14px;">
@@ -156,13 +369,10 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
     email.replyMessage = cleanMessage;
     email.replySubject = replySubject;
     email.repliedAt = new Date();
-    email.repliedBy = (req.user as any)?.name || (req.user as any)?.email || "Admin";
+    email.repliedBy = getAdminName(req);
     await email.save();
 
-    res.status(200).json({
-      message: "Reply sent successfully",
-      email,
-    });
+    res.status(200).json({ message: "Reply sent successfully", email });
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to send email reply",
@@ -180,11 +390,7 @@ export const updateEmailStatus = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const email = await EmailMessage.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true }
-    );
+    const email = await EmailMessage.findByIdAndUpdate(req.params.id, { status }, { new: true });
 
     if (!email) {
       res.status(404).json({ message: "Email not found" });
@@ -209,9 +415,7 @@ export const deleteEmail = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    res.status(200).json({
-      message: "Email deleted from dashboard copy",
-    });
+    res.status(200).json({ message: "Email deleted from dashboard copy" });
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to delete email",

@@ -6,6 +6,8 @@ dotenv.config();
 
 interface SendEmailOptions {
   attachments?: { filename: string; path: string }[];
+  cc?: string[];
+  bcc?: string[];
   fromEmail?: string;
   fromName?: string;
   replyTo?: string;
@@ -25,7 +27,7 @@ const stripHtml = (html = "") =>
     .trim();
 
 const sendEmail = async (
-  to: string,
+  to: string | string[],
   subject: string,
   htmlContent: string,
   attachmentsOrOptions?: { filename: string; path: string }[] | SendEmailOptions
@@ -94,6 +96,8 @@ const sendEmail = async (
     const result = await transporter.sendMail({
       from: `"${fromName}" <${fromEmail}>`,
       to,
+      cc: options.cc,
+      bcc: options.bcc,
       subject,
       html,
       text: stripHtml(htmlContent),
@@ -101,7 +105,7 @@ const sendEmail = async (
       attachments: options.attachments,
     });
 
-    console.log(`Email sent successfully to ${to}. Message ID: ${result.messageId}`);
+    console.log(`Email sent successfully to ${Array.isArray(to) ? to.join(", ") : to}. Message ID: ${result.messageId}`);
   } catch (error) {
     console.error("Email sending failed:", error);
 
