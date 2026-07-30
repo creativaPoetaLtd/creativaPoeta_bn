@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+﻿import { Request, Response } from "express";
 import EmailMessage from "../models/EmailMessage";
 import OutboundEmail from "../models/OutboundEmail";
 import User from "../models/User";
@@ -75,6 +75,27 @@ const applyOutboundOwnerAccess = (req: Request, filter: any) => {
   if (canSeeAllMailboxes(req)) return;
   filter.createdByEmail = getAdminEmail(req);
 };
+
+const addEmailActivity = (email: any, req: Request, type: "assigned" | "released" | "read" | "replied" | "status", message?: string) => {
+  email.activity = email.activity || [];
+  email.activity.push({
+    type,
+    actorName: getAdminName(req),
+    actorEmail: getAdminEmail(req),
+    message,
+    createdAt: new Date(),
+  });
+};
+
+const assignEmailToCurrentUser = (email: any, req: Request, message = "Ticket pris en charge") => {
+  email.assignedToEmail = getAdminEmail(req);
+  email.assignedToName = getAdminName(req);
+  email.assignedAt = new Date();
+  addEmailActivity(email, req, "assigned", message);
+};
+
+const canModifyEmailAssignment = (req: Request, email: any) =>
+  canSeeAllMailboxes(req) || !email.assignedToEmail || email.assignedToEmail === getAdminEmail(req);
 const getAdminNotificationEmail = () =>
   process.env.ADMIN_NOTIFICATION_EMAIL ||
   process.env.ADMIN_EMAIL ||
@@ -274,6 +295,43 @@ export const cronSyncEmails = async (req: Request, res: Response): Promise<void>
   }
 };
 
+export const getEmailSummary = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const filter: any = {};
+    await applyInboundMailboxAccess(req, filter);
+
+    const currentEmail = getAdminEmail(req);
+    const [statusCounts, assignedToMe, openAssignedToOthers] = await Promise.all([
+      EmailMessage.aggregate([{ $match: filter }, { $group: { _id: "$status", count: { $sum: 1 } } }]),
+      currentEmail ? EmailMessage.countDocuments({ ...filter, assignedToEmail: currentEmail, status: { $ne: "archived" } }) : 0,
+      EmailMessage.countDocuments({
+        ...filter,
+        assignedToEmail: { $exists: true, $nin: [currentEmail, ""] },
+        status: { $in: ["new", "read", "replied"] },
+      }),
+    ]);
+
+    const metrics = statusCounts.reduce((acc: Record<string, number>, item: { _id: string; count: number }) => {
+      acc[item._id] = item.count;
+      return acc;
+    }, {});
+
+    res.status(200).json({
+      message: "Email summary fetched successfully",
+      metrics: {
+        ...metrics,
+        assignedToMe,
+        openAssignedToOthers,
+        attention: (metrics.new || 0) + assignedToMe,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      message: "Failed to fetch email summary",
+      error: error?.message || "Unknown error",
+    });
+  }
+};
 export const getEmails = async (req: Request, res: Response): Promise<void> => {
   try {
     const page = Math.max(1, Number(req.query.page || 1));
@@ -413,6 +471,7 @@ export const getEmail = async (req: Request, res: Response): Promise<void> => {
 
     if (email.status === "new") {
       email.status = "read";
+      addEmailActivity(email, req, "read", "Message ouvert");
       await email.save();
     }
 
@@ -420,6 +479,74 @@ export const getEmail = async (req: Request, res: Response): Promise<void> => {
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to fetch email",
+      error: error?.message || "Unknown error",
+    });
+  }
+};
+
+export const claimEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const filter: any = { _id: req.params.id };
+    await applyInboundMailboxAccess(req, filter);
+    const email = await EmailMessage.findOne(filter);
+
+    if (!email) {
+      res.status(404).json({ message: "Email not found" });
+      return;
+    }
+
+    if (!canModifyEmailAssignment(req, email)) {
+      res.status(409).json({
+        message: "This email is already assigned to another admin.",
+        assignedToName: email.assignedToName,
+        assignedToEmail: email.assignedToEmail,
+      });
+      return;
+    }
+
+    assignEmailToCurrentUser(email, req);
+    await email.save();
+
+    res.status(200).json({ message: "Email assigned", email });
+  } catch (error: any) {
+    res.status(500).json({
+      message: "Failed to assign email",
+      error: error?.message || "Unknown error",
+    });
+  }
+};
+
+export const releaseEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const filter: any = { _id: req.params.id };
+    await applyInboundMailboxAccess(req, filter);
+    const email = await EmailMessage.findOne(filter);
+
+    if (!email) {
+      res.status(404).json({ message: "Email not found" });
+      return;
+    }
+
+    if (!canModifyEmailAssignment(req, email)) {
+      res.status(409).json({
+        message: "Only the assigned admin can release this email.",
+        assignedToName: email.assignedToName,
+        assignedToEmail: email.assignedToEmail,
+      });
+      return;
+    }
+
+    const previousOwner = email.assignedToName || email.assignedToEmail || "admin";
+    email.assignedToEmail = undefined;
+    email.assignedToName = undefined;
+    email.assignedAt = undefined;
+    addEmailActivity(email, req, "released", `Ticket libere de ${previousOwner}`);
+    await email.save();
+
+    res.status(200).json({ message: "Email released", email });
+  } catch (error: any) {
+    res.status(500).json({
+      message: "Failed to release email",
       error: error?.message || "Unknown error",
     });
   }
@@ -606,11 +733,18 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
       signature: String(signature || "").trim(),
     });
 
+    if (!email.assignedToEmail) {
+      assignEmailToCurrentUser(email, req, "Ticket pris en charge pendant la reponse");
+    } else if (email.assignedToEmail !== getAdminEmail(req)) {
+      addEmailActivity(email, req, "replied", `Reponse ajoutee alors que le ticket est pris par ${email.assignedToName || email.assignedToEmail}`);
+    }
+
     email.status = "replied";
     email.replyMessage = cleanMessage;
     email.replySubject = replySubject;
     email.repliedAt = new Date();
     email.repliedBy = getAdminName(req);
+    addEmailActivity(email, req, "replied", `Reponse envoyee: ${replySubject}`);
     await email.save();
 
     res.status(200).json({ message: "Reply sent successfully", email });
@@ -633,11 +767,17 @@ export const updateEmailStatus = async (req: Request, res: Response): Promise<vo
 
     const statusFilter: any = { _id: req.params.id };
     await applyInboundMailboxAccess(req, statusFilter);
-    const email = await EmailMessage.findOneAndUpdate(statusFilter, { status }, { new: true });
+    const email = await EmailMessage.findOne(statusFilter);
 
     if (!email) {
       res.status(404).json({ message: "Email not found" });
       return;
+    }
+
+    if (email.status !== status) {
+      email.status = status as any;
+      addEmailActivity(email, req, "status", `Statut change en ${status}`);
+      await email.save();
     }
 
     res.status(200).json({ message: "Email status updated", email });
@@ -668,6 +808,12 @@ export const deleteEmail = async (req: Request, res: Response): Promise<void> =>
     });
   }
 };
+
+
+
+
+
+
 
 
 

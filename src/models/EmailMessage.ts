@@ -1,6 +1,15 @@
 import mongoose, { Document, Schema } from "mongoose";
 
 export type EmailMessageStatus = "new" | "read" | "replied" | "archived";
+export type EmailMessageActivityType = "assigned" | "released" | "read" | "replied" | "status";
+
+export interface IEmailMessageActivity {
+  type: EmailMessageActivityType;
+  actorName?: string;
+  actorEmail?: string;
+  message?: string;
+  createdAt: Date;
+}
 
 export interface IEmailMessage extends Document {
   mailbox: string;
@@ -24,6 +33,10 @@ export interface IEmailMessage extends Document {
   replySubject?: string;
   repliedAt?: Date;
   repliedBy?: string;
+  assignedToEmail?: string;
+  assignedToName?: string;
+  assignedAt?: Date;
+  activity?: IEmailMessageActivity[];
 }
 
 const EmailMessageSchema: Schema = new Schema(
@@ -53,6 +66,18 @@ const EmailMessageSchema: Schema = new Schema(
     replySubject: { type: String, trim: true },
     repliedAt: { type: Date },
     repliedBy: { type: String, trim: true },
+    assignedToEmail: { type: String, trim: true, lowercase: true },
+    assignedToName: { type: String, trim: true },
+    assignedAt: { type: Date },
+    activity: [
+      {
+        type: { type: String, enum: ["assigned", "released", "read", "replied", "status"], required: true },
+        actorName: { type: String, trim: true },
+        actorEmail: { type: String, trim: true, lowercase: true },
+        message: { type: String, trim: true },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true }
 );
@@ -61,6 +86,7 @@ EmailMessageSchema.index({ mailbox: 1, uid: 1 }, { unique: true, sparse: true })
 EmailMessageSchema.index({ mailbox: 1, messageId: 1 }, { sparse: true });
 EmailMessageSchema.index({ status: 1, receivedAt: -1 });
 EmailMessageSchema.index({ mailboxAddress: 1, receivedAt: -1 });
+EmailMessageSchema.index({ assignedToEmail: 1, receivedAt: -1 });
 EmailMessageSchema.index({
   subject: "text",
   preview: "text",
