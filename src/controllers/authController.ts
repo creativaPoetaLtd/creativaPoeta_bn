@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import User, { IUser } from "../models/User";
-import { AdminRole, normalizeAdminRole } from "../middleware/authMiddleware";
+import { getEffectiveAdminRole, normalizeAdminRole } from "../middleware/authMiddleware";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -46,7 +46,7 @@ const permissionsByRole: Record<CreatableAdminRole | "super_admin", string[]> = 
 };
 
 const sanitizeUser = (user: IUser) => {
-  const normalizedRole = normalizeAdminRole(user.role);
+  const normalizedRole = getEffectiveAdminRole(user.role, user.email);
   const safeRole = normalizedRole === "admin" || normalizedRole === "editor" || normalizedRole === "viewer"
     ? "admin_5"
     : normalizedRole;
@@ -154,7 +154,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const normalizedRole = normalizeAdminRole(user.role);
+    const normalizedRole = getEffectiveAdminRole(user.role, user.email);
     const token = jwt.sign(
       {
         _id: user._id,

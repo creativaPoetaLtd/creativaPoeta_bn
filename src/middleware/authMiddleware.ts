@@ -4,6 +4,10 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET as string;
+const ROOT_ADMIN_EMAILS = (process.env.ROOT_ADMIN_EMAILS || "admin@creativapoeta.com,admin@cp.com")
+  .split(",")
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
 
 export type AdminRole =
   | "super_admin"
@@ -35,13 +39,21 @@ export const normalizeAdminRole = (role?: string): AdminRole => {
   return legacyRoleMap[role] || (role as AdminRole);
 };
 
-export const canAccessDashboard = (role?: string) =>
+export const isRootAdminEmail = (email?: string) =>
+  Boolean(email && ROOT_ADMIN_EMAILS.includes(email.trim().toLowerCase()));
+
+export const getEffectiveAdminRole = (role?: string, email?: string): AdminRole => {
+  if (isRootAdminEmail(email)) return "super_admin";
+  return normalizeAdminRole(role);
+};
+
+export const canAccessDashboard = (role?: string, email?: string) =>
   ["super_admin", "admin_0", "admin_1", "admin_2", "admin_3", "admin_4", "admin_5"].includes(
-    normalizeAdminRole(role)
+    getEffectiveAdminRole(role, email)
   );
 
-export const canManageAdminUsers = (role?: string) =>
-  ["super_admin", "admin_0"].includes(normalizeAdminRole(role));
+export const canManageAdminUsers = (role?: string, email?: string) =>
+  ["super_admin", "admin_0"].includes(getEffectiveAdminRole(role, email));
 
 declare module "express-serve-static-core" {
   interface Request {
@@ -83,7 +95,7 @@ export const authenticateUser = (
       return;
     }
 
-    req.user = { ...decoded, role: normalizeAdminRole(decoded.role) };
+    req.user = { ...decoded, role: getEffectiveAdminRole(decoded.role, decoded.email) };
     next();
   } catch (err: any) {
     console.error("Token verification error:", err.message);
@@ -111,7 +123,7 @@ export const authorizeRoles = (roles: string[]) => {
       return;
     }
 
-    if (!roles.includes(normalizeAdminRole(req.user.role))) {
+    if (!roles.includes(getEffectiveAdminRole(req.user.role, req.user.email))) {
       res.status(403).json({ message: "Access denied. Insufficient role." });
       return;
     }
@@ -132,7 +144,7 @@ export const adminOnly = (
     return;
   }
 
-  if (!canAccessDashboard(req.user.role)) {
+  if (!canAccessDashboard(req.user.role, req.user.email)) {
     res.status(403).json({ message: "Access denied. Admin role required." });
     return;
   }
@@ -152,7 +164,7 @@ export const adminUserManagerOnly = (
     return;
   }
 
-  if (!canManageAdminUsers(req.user.role)) {
+  if (!canManageAdminUsers(req.user.role, req.user.email)) {
     res.status(403).json({ message: "Access denied. User management role required." });
     return;
   }
@@ -172,7 +184,7 @@ export const superAdminOnly = (
     return;
   }
 
-  if (normalizeAdminRole(req.user.role) !== "super_admin") {
+  if (getEffectiveAdminRole(req.user.role, req.user.email) !== "super_admin") {
     res.status(403).json({ message: "Access denied. Super admin role required." });
     return;
   }
