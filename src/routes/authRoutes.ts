@@ -1,4 +1,4 @@
-﻿import express from "express";
+import express from "express";
 import {
   activateAccount,
   changePassword,
@@ -19,7 +19,7 @@ import { authenticateUser, adminUserManagerOnly } from "../middleware/authMiddle
 
 const AuthRouter = express.Router();
 
-// Bootstrap only: creates the first super admin when no users exist and a server secret is provided.
+// Bootstrap only: creates the first root account when no users exist and a server secret is provided.
 AuthRouter.post("/signup", signup);
 
 AuthRouter.post("/login", login);
@@ -28,7 +28,7 @@ AuthRouter.post("/activate", activateAccount);
 AuthRouter.post("/password-reset/request", requestPasswordReset);
 AuthRouter.post("/password-reset/complete", completePasswordReset);
 
-// Emergency recovery: promotes an existing admin when no super admin exists and a server secret is provided.
+// Emergency recovery: promotes an existing admin when no root account exists and a server secret is provided.
 AuthRouter.post("/bootstrap/promote-super-admin", promoteExistingAdmin);
 
 AuthRouter.post("/change-password", authenticateUser, changePassword);
@@ -41,3 +41,4 @@ AuthRouter.delete("/admins/:id", authenticateUser, adminUserManagerOnly, deleteA
 AuthRouter.post("/verify-token", verifyToken);
 
 export default AuthRouter;
+

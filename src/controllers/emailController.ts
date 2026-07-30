@@ -14,6 +14,14 @@ const MAX_ATTACHMENT_COUNT = 8;
 const normalizeReplySubject = (subject: string) =>
   /^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim() || "Votre message"}`;
 
+
+const parseQueryValues = (value: unknown): string[] =>
+  String(value || "")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+const normalizeEmail = (value: unknown) => String(value || "").trim().toLowerCase();
+
 const parseEmailList = (value: unknown): string[] => {
   if (Array.isArray(value)) {
     return value.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
@@ -28,6 +36,7 @@ const parseEmailList = (value: unknown): string[] => {
 const getAdminName = (req: Request) =>
   (req.user as any)?.name || (req.user as any)?.email || "Admin";
 const getAdminEmail = (req: Request) => String((req.user as any)?.email || "").toLowerCase().trim();
+const isCpMailbox = (email = "") => /^[-a-z0-9._%+]+@creativapoeta\.(com|be)$/i.test(email.trim());
 
 const canSeeAllMailboxes = (req: Request) =>
   ["super_admin", "admin_0"].includes(getEffectiveAdminRole((req.user as any)?.role, (req.user as any)?.email));
@@ -145,6 +154,7 @@ const getOutboundPayload = (req: Request) => ({
   subject: String(req.body?.subject || "").trim(),
   body: String(req.body?.body || "").trim(),
   signature: String(req.body?.signature || "").trim(),
+  fromEmail: normalizeEmail(req.body?.fromEmail || req.body?.from || ""),
 });
 const getUploadedFiles = (req: Request): Express.Multer.File[] =>
   Array.isArray(req.files) ? (req.files as Express.Multer.File[]) : [];
@@ -183,10 +193,19 @@ const sendOutboundPayload = async (
   if (!payload.body) throw new Error("Message body is required.");
 
   const { mailAttachments, metadata } = getUploadedAttachments(req);
+  if (payload.fromEmail && !isCpMailbox(payload.fromEmail)) {
+    throw new Error("Sender must be a Creativa Poeta mailbox.");
+  }
+
+  const allowedSenders = await getAllowedMailboxAddresses(req);
+  if (payload.fromEmail && allowedSenders && !allowedSenders.includes(payload.fromEmail)) {
+    throw new Error("You cannot send from this mailbox.");
+  }
 
   await sendEmail(payload.to, payload.subject, formatParagraphs(payload.body), {
     cc: payload.cc,
     bcc: payload.bcc,
+    fromEmail: payload.fromEmail || undefined,
     title: payload.subject,
     preheader: payload.body.slice(0, 130),
     signature: payload.signature,
@@ -197,6 +216,7 @@ const sendOutboundPayload = async (
     ...payload,
     folder: "sent" as const,
     status: "sent" as const,
+    fromEmail: payload.fromEmail || undefined,
     attachments: metadata,
     sentAt: new Date(),
     updatedBy: getAdminName(req),
@@ -263,8 +283,21 @@ export const getEmails = async (req: Request, res: Response): Promise<void> => {
     const search = String(req.query.search || "").trim();
     const filter: any = {};
 
-    if (allowedStatuses.includes(status)) filter.status = status;
-    if (mailbox !== "all") filter.mailbox = mailbox;
+    const selectedStatuses = parseQueryValues(status).filter((item) => allowedStatuses.includes(item));
+    const selectedMailboxes = parseQueryValues(mailbox).filter((item) => item && item !== "all");
+
+    if (selectedStatuses.length) filter.status = { $in: selectedStatuses };
+    if (selectedMailboxes.length) {
+      filter.$and = [
+        ...(filter.$and || []),
+        {
+          $or: [
+            { mailbox: { $in: selectedMailboxes } },
+            { mailboxAddress: { $in: selectedMailboxes } },
+          ],
+        },
+      ];
+    }
     await applyInboundMailboxAccess(req, filter);
 
     if (search) {
@@ -278,15 +311,23 @@ export const getEmails = async (req: Request, res: Response): Promise<void> => {
     }
 
     const skip = (page - 1) * limit;
-    const [emails, totalEmails, counts] = await Promise.all([
+    const mailboxAccessFilter: any = {};
+    await applyInboundMailboxAccess(req, mailboxAccessFilter);
+    const [emails, totalEmails, counts, mailboxRows] = await Promise.all([
       EmailMessage.find(filter).sort({ receivedAt: -1 }).skip(skip).limit(limit),
       EmailMessage.countDocuments(filter),
       EmailMessage.aggregate([{ $match: filter }, { $group: { _id: "$status", count: { $sum: 1 } } }]),
+      EmailMessage.aggregate([
+        { $match: mailboxAccessFilter },
+        { $group: { _id: "$mailboxAddress" } },
+        { $sort: { _id: 1 } },
+      ]),
     ]);
 
     res.status(200).json({
       message: "Emails fetched successfully",
       emails,
+      mailboxes: mailboxRows.map((row: { _id?: string }) => row._id).filter(Boolean),
       metrics: counts.reduce(
         (acc: Record<string, number>, item: { _id: string; count: number }) => {
           acc[item._id] = item.count;
@@ -470,6 +511,7 @@ export const sendDraftEmail = async (req: Request, res: Response): Promise<void>
           subject: draft.subject || "",
           body: draft.body || "",
           signature: draft.signature || "",
+          fromEmail: draft.fromEmail || "",
         },
         req
       );
@@ -555,7 +597,10 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
       </div>
     `;
 
+    const replyFromEmail = isCpMailbox(email.mailboxAddress || "") ? email.mailboxAddress : undefined;
+
     await sendEmail(email.fromEmail, replySubject, content, {
+      fromEmail: replyFromEmail,
       title: replySubject,
       preheader: cleanMessage.slice(0, 130),
       signature: String(signature || "").trim(),
@@ -623,6 +668,12 @@ export const deleteEmail = async (req: Request, res: Response): Promise<void> =>
     });
   }
 };
+
+
+
+
+
+
 
 
 

@@ -25,8 +25,20 @@ export interface EmailSyncResult {
   skipped: number;
 }
 
+const normalizeEnvKey = (value: string) =>
+  value
+    .trim()
+    .replace(/[^a-z0-9_]/gi, "_")
+    .toUpperCase();
+
+const getExtraMailboxKeys = () =>
+  String(process.env.IMAP_EXTRA_KEYS || "")
+    .split(/[,;\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
 const getMailboxConfigs = (): MailboxConfig[] => {
-  const configs = [
+  const baseConfigs = [
     {
       key: "be",
       address: process.env.IMAP_BE_USER || process.env.IMAP_BE_ADDRESS,
@@ -39,11 +51,23 @@ const getMailboxConfigs = (): MailboxConfig[] => {
     },
   ];
 
-  return configs
+  const extraConfigs = getExtraMailboxKeys().map((key) => {
+    const envKey = normalizeEnvKey(key);
+    return {
+      key: key.trim().toLowerCase(),
+      address:
+        process.env[`IMAP_${envKey}_USER`] ||
+        process.env[`IMAP_${envKey}_ADDRESS`] ||
+        process.env[`IMAP_${envKey}_EMAIL`],
+      password: process.env[`IMAP_${envKey}_PASSWORD`],
+    };
+  });
+
+  return [...baseConfigs, ...extraConfigs]
     .filter((config) => config.address && config.password)
     .map((config) => ({
       key: config.key,
-      address: config.address as string,
+      address: String(config.address).trim().toLowerCase(),
       password: config.password as string,
     }));
 };
@@ -201,3 +225,4 @@ export const syncConfiguredMailboxes = async (limit = 50): Promise<EmailSyncResu
     skipped: results.reduce((total, item) => total + item.skipped, 0),
   };
 };
+

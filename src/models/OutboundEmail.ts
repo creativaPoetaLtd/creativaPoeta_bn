@@ -18,6 +18,7 @@ export interface IOutboundEmail extends Document {
   subject: string;
   body: string;
   signature?: string;
+  fromEmail?: string;
   attachments?: IOutboundAttachment[];
   error?: string;
   sentAt?: Date;
@@ -37,6 +38,7 @@ const OutboundEmailSchema: Schema = new Schema(
     subject: { type: String, trim: true, default: "" },
     body: { type: String, default: "" },
     signature: { type: String, default: "" },
+    fromEmail: { type: String, trim: true, lowercase: true },
     attachments: [
       {
         filename: { type: String, required: true, trim: true },
@@ -60,3 +62,4 @@ OutboundEmailSchema.index({ createdByEmail: 1, folder: 1, updatedAt: -1 });
 OutboundEmailSchema.index({ subject: "text", body: "text", signature: "text", to: "text" });
 
 export default mongoose.model<IOutboundEmail>("OutboundEmail", OutboundEmailSchema);
+

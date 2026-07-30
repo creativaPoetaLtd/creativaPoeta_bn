@@ -28,7 +28,7 @@ const allowedRoles = [
 type CreatableAdminRole = (typeof allowedRoles)[number];
 
 const roleLabels: Record<CreatableAdminRole | "super_admin", string> = {
-  super_admin: "Super Admin",
+  super_admin: "Niveau 0 - Direction",
   admin_0: "Niveau 0 - Direction",
   admin_1: "Niveau 1 - Operations",
   admin_2: "Niveau 2 - Contenu & SEO",
@@ -157,7 +157,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
     if (userCount > 0 || !hasValidBootstrapSecret(req)) {
       res.status(403).json({
         error:
-          "Public signup is disabled. Admin users must be created by a super admin.",
+          "Public signup is disabled.",
       });
       return;
     }
@@ -194,7 +194,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
     await newUser.save();
 
     res.status(201).json({
-      message: "Initial super admin registered successfully.",
+      message: "Initial admin registered successfully.",
       user: sanitizeUser(newUser),
     });
   } catch (error) {
@@ -350,7 +350,7 @@ export const requestPasswordReset = async (req: Request, res: Response): Promise
     }
 
     res.status(200).json({
-      message: "If this CP admin account exists, a reset request has been recorded. Ask a super admin or level 0 admin for the reset link.",
+      message: "If this account exists, a reset request has been recorded.",
     });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
@@ -557,7 +557,7 @@ export const promoteExistingAdmin = async (
 
     const existingSuperAdmin = await User.findOne({ role: "super_admin" });
     if (existingSuperAdmin) {
-      res.status(409).json({ error: "A super admin already exists." });
+      res.status(409).json({ error: "An initial admin already exists." });
       return;
     }
 
@@ -573,7 +573,7 @@ export const promoteExistingAdmin = async (
       return;
     }
 
-    res.status(200).json({ message: "User promoted to super admin.", user: sanitizeUser(user as IUser) });
+    res.status(200).json({ message: "User promoted.", user: sanitizeUser(user as IUser) });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -614,5 +614,6 @@ export const verifyToken = async (
     res.status(500).json({ error: (error as Error).message });
   }
 };
+
 
 
