@@ -2,6 +2,30 @@ import { Request, Response, NextFunction } from "express";
 import sendEmail from "../utils/sendEmail";
 import Query, { IQuery } from "../models/Query";
 
+const getAdminEmail = (req: Request) => String((req.user as any)?.email || "").toLowerCase().trim();
+const getAdminName = (req: Request) => String((req.user as any)?.name || (req.user as any)?.email || "Admin").trim();
+
+const addContactActivity = (query: any, req: Request, type: "assigned" | "released" | "opened" | "replied" | "status", message: string) => {
+  query.activity = query.activity || [];
+  query.activity.push({
+    type,
+    message,
+    actorEmail: getAdminEmail(req),
+    actorName: getAdminName(req),
+    at: new Date(),
+  });
+};
+
+const assignContactToCurrentUser = (query: any, req: Request, message = "Ticket pris en charge") => {
+  query.assignedToEmail = getAdminEmail(req);
+  query.assignedToName = getAdminName(req);
+  query.assignedAt = new Date();
+  addContactActivity(query, req, "assigned", message);
+};
+
+const canModifyContactAssignment = (req: Request, query: any) =>
+  !query.assignedToEmail || query.assignedToEmail === getAdminEmail(req);
+
 // Submit contact form (public endpoint)
 export const sendContactDetails = async (
   req: Request,
@@ -64,6 +88,19 @@ export const sendContactDetails = async (
   }
 };
 
+export const getContactSummary = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const currentEmail = getAdminEmail(req);
+    const [pending, assignedToMe] = await Promise.all([
+      Query.countDocuments({ status: "pending" }),
+      Query.countDocuments({ assignedToEmail: currentEmail, status: { $ne: "closed" } }),
+    ]);
+    res.status(200).json({ metrics: { pending, assignedToMe, attention: pending + assignedToMe } });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch contact summary" });
+  }
+};
+
 // Get all contact queries (admin only)
 export const getAllQueries = async (
   req: Request,
@@ -116,6 +153,9 @@ export const getQuery = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    addContactActivity(query, req, "opened", "Ticket ouvert");
+    await query.save();
+
     res.status(200).json({
       message: "Query fetched successfully",
       query,
@@ -146,12 +186,19 @@ export const replyToQuery = async (
       return;
     }
 
+    if (!query.assignedToEmail) {
+      assignContactToCurrentUser(query, req, "Ticket pris en charge pendant la reponse");
+    } else if (query.assignedToEmail !== getAdminEmail(req)) {
+      addContactActivity(query, req, "replied", `Reponse envoyee alors que le ticket etait assigne a ${query.assignedToName || query.assignedToEmail}`);
+    }
+
     // Update query with reply
     query.replyMessage = replyMessage;
     query.isReplied = true;
     query.repliedAt = new Date();
     query.repliedBy = userEmail;
     query.status = "replied";
+    addContactActivity(query, req, "replied", `Reponse envoyee: ${subject || "Contact"}`);
     await query.save();
 
     // Send reply email
@@ -205,11 +252,17 @@ export const updateQueryStatus = async (
       return;
     }
 
-    const query = await Query.findByIdAndUpdate(id, { status }, { new: true });
+    const query = await Query.findById(id);
 
     if (!query) {
       res.status(404).json({ message: "Query not found" });
       return;
+    }
+
+    if (query.status !== status) {
+      query.status = status;
+      addContactActivity(query, req, "status", `Statut change en ${status}`);
+      await query.save();
     }
 
     res.status(200).json({
@@ -218,6 +271,51 @@ export const updateQueryStatus = async (
     });
   } catch (error) {
     res.status(500).json({ message: "Failed to update query status" });
+  }
+};
+
+export const claimQuery = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const query = await Query.findById(req.params.id);
+    if (!query) {
+      res.status(404).json({ message: "Query not found" });
+      return;
+    }
+    if (!canModifyContactAssignment(req, query)) {
+      res.status(409).json({
+        message: `This ticket is already handled by ${query.assignedToName || query.assignedToEmail}.`,
+        query,
+      });
+      return;
+    }
+    assignContactToCurrentUser(query, req);
+    await query.save();
+    res.status(200).json({ message: "Query assigned", query });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to assign query" });
+  }
+};
+
+export const releaseQuery = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const query = await Query.findById(req.params.id);
+    if (!query) {
+      res.status(404).json({ message: "Query not found" });
+      return;
+    }
+    if (!canModifyContactAssignment(req, query)) {
+      res.status(403).json({ message: "Only the assigned admin can release this ticket." });
+      return;
+    }
+    const previousOwner = query.assignedToName || query.assignedToEmail || "un admin";
+    query.assignedToEmail = undefined;
+    query.assignedToName = undefined;
+    query.assignedAt = undefined;
+    addContactActivity(query, req, "released", `Ticket libere de ${previousOwner}`);
+    await query.save();
+    res.status(200).json({ message: "Query released", query });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to release query" });
   }
 };
 

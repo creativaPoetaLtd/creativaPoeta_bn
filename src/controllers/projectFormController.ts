@@ -5,6 +5,38 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+const getAdminEmail = (req: Request) => String((req.user as any)?.email || "").toLowerCase().trim();
+const getAdminName = (req: Request) => String((req.user as any)?.name || (req.user as any)?.email || "Admin").trim();
+
+const addProjectActivity = (request: any, req: Request, type: "assigned" | "released" | "opened" | "replied" | "status", message: string) => {
+  request.activity = request.activity || [];
+  request.activity.push({
+    type,
+    message,
+    actorEmail: getAdminEmail(req),
+    actorName: getAdminName(req),
+    at: new Date(),
+  });
+};
+
+const assignProjectToCurrentUser = (request: any, req: Request, message = "Ticket pris en charge") => {
+  request.assignedToEmail = getAdminEmail(req);
+  request.assignedToName = getAdminName(req);
+  request.assignedAt = new Date();
+  addProjectActivity(request, req, "assigned", message);
+};
+
+const canModifyProjectAssignment = (req: Request, request: any) =>
+  !request.assignedToEmail || request.assignedToEmail === getAdminEmail(req);
+
+const getProjectBucket = (request: any) => {
+  const serviceType = String(request.serviceType || "").toLowerCase();
+  const selected = Array.isArray(request.selectedServices) ? request.selectedServices.join(" ").toLowerCase() : "";
+  if (serviceType.includes("diagnostic visibilite") || serviceType.includes("visibility test") || selected.includes("test visibilite")) return "visibility";
+  if (serviceType.includes("assistance numerique") || serviceType.includes("digital assistance") || serviceType.includes("depannage") || selected.includes("depannage") || selected.includes("troubleshooting")) return "assistance";
+  return "projects";
+};
+
 export const sendProjectInquiry = async (
   req: Request,
   res: Response,
@@ -344,6 +376,34 @@ export const sendProjectInquiry = async (
   }
 };
 
+export const getProjectRequestSummary = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const requests = await ProjectRequest.find({}, "status isReplied serviceType selectedServices assignedToEmail").lean();
+    const metrics = {
+      projects: 0,
+      visibility: 0,
+      assistance: 0,
+      assignedToMe: 0,
+    };
+    const currentEmail = getAdminEmail(req);
+
+    requests.forEach((request: any) => {
+      const status = String(request.status || "pending").toLowerCase();
+      const needsAttention = !request.isReplied && ["pending", "in-review", "in-progress"].includes(status);
+      if (needsAttention) metrics[getProjectBucket(request) as "projects" | "visibility" | "assistance"] += 1;
+      if (request.assignedToEmail && request.assignedToEmail === currentEmail && status !== "completed") metrics.assignedToMe += 1;
+    });
+
+    res.status(200).json({ metrics });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Get all project requests for dashboard
 export const getAllProjectRequests = async (
   req: Request,
@@ -398,6 +458,9 @@ export const getProjectRequest = async (
       return;
     }
 
+    addProjectActivity(request, req, "opened", "Ticket ouvert");
+    await request.save();
+
     res.status(200).json({
       message: "Project request fetched successfully",
       request,
@@ -431,12 +494,19 @@ export const replyToProjectRequest = async (
       return;
     }
 
+    if (!request.assignedToEmail) {
+      assignProjectToCurrentUser(request, req, "Ticket pris en charge pendant la reponse");
+    } else if (request.assignedToEmail !== getAdminEmail(req)) {
+      addProjectActivity(request, req, "replied", `Reponse envoyee alors que le ticket etait assigne a ${request.assignedToName || request.assignedToEmail}`);
+    }
+
     // Update the request with reply information
     request.isReplied = true;
     request.replyMessage = replyMessage.trim();
     request.repliedAt = new Date();
     request.repliedBy = req.user?.name || req.user?.email || "Admin";
     request.status = "replied";
+    addProjectActivity(request, req, "replied", `Reponse envoyee: ${subject}`);
 
     await request.save();
 
@@ -745,21 +815,76 @@ export const updateProjectRequestStatus = async (
       return;
     }
 
-    const request = await ProjectRequest.findByIdAndUpdate(
-      id,
-      { status: normalizedStatus, updatedAt: new Date() },
-      { new: true }
-    );
+    const request = await ProjectRequest.findById(id);
 
     if (!request) {
       res.status(404).json({ message: "Project request not found" });
       return;
     }
 
+    if (request.status !== normalizedStatus) {
+      request.status = normalizedStatus;
+      addProjectActivity(request, req, "status", `Statut change en ${normalizedStatus}`);
+      await request.save();
+    }
+
     res.status(200).json({
       message: "Project request status updated successfully",
       request,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const claimProjectRequest = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const request = await ProjectRequest.findById(req.params.id);
+    if (!request) {
+      res.status(404).json({ message: "Project request not found" });
+      return;
+    }
+    if (!canModifyProjectAssignment(req, request)) {
+      res.status(409).json({
+        message: `This ticket is already handled by ${request.assignedToName || request.assignedToEmail}.`,
+        request,
+      });
+      return;
+    }
+    assignProjectToCurrentUser(request, req);
+    await request.save();
+    res.status(200).json({ message: "Project request assigned", request });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const releaseProjectRequest = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const request = await ProjectRequest.findById(req.params.id);
+    if (!request) {
+      res.status(404).json({ message: "Project request not found" });
+      return;
+    }
+    if (!canModifyProjectAssignment(req, request)) {
+      res.status(403).json({ message: "Only the assigned admin can release this ticket." });
+      return;
+    }
+    const previousOwner = request.assignedToName || request.assignedToEmail || "un admin";
+    request.assignedToEmail = undefined;
+    request.assignedToName = undefined;
+    request.assignedAt = undefined;
+    addProjectActivity(request, req, "released", `Ticket libere de ${previousOwner}`);
+    await request.save();
+    res.status(200).json({ message: "Project request released", request });
   } catch (error) {
     next(error);
   }
