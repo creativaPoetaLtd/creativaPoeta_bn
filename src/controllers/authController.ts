@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import User, { IUser } from "../models/User";
+import { AdminRole, normalizeAdminRole } from "../middleware/authMiddleware";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -13,17 +14,54 @@ if (!JWT_SECRET) {
   throw new Error("JWT_SECRET is not defined in the environment variables.");
 }
 
-const allowedRoles = ["super_admin", "admin", "editor", "viewer"] as const;
-type AdminRole = (typeof allowedRoles)[number];
+const allowedRoles = [
+  "admin_0",
+  "admin_1",
+  "admin_2",
+  "admin_3",
+  "admin_4",
+  "admin_5",
+] as const;
 
-const sanitizeUser = (user: IUser) => ({
-  id: user._id,
-  name: user.name,
-  email: user.email,
-  role: user.role,
-  isActive: user.isActive,
-  createdAt: user.createdAt,
-});
+type CreatableAdminRole = (typeof allowedRoles)[number];
+
+const roleLabels: Record<CreatableAdminRole | "super_admin", string> = {
+  super_admin: "Superadmin",
+  admin_0: "Niveau 0 - Direction",
+  admin_1: "Niveau 1 - Operations",
+  admin_2: "Niveau 2 - Contenu & SEO",
+  admin_3: "Niveau 3 - Support & email",
+  admin_4: "Niveau 4 - Lecture & reporting",
+  admin_5: "Niveau 5 - Acces limite",
+};
+
+const permissionsByRole: Record<CreatableAdminRole | "super_admin", string[]> = {
+  super_admin: ["all", "manage_admin_0"],
+  admin_0: ["all_except_admin_0_management"],
+  admin_1: ["requests:manage", "email:send", "email:read", "jobs:manage"],
+  admin_2: ["blogs:manage", "seo:manage", "email:read"],
+  admin_3: ["email:manage", "contacts:reply", "assistance:reply"],
+  admin_4: ["dashboard:read", "reports:read"],
+  admin_5: ["assigned:read", "assigned:reply"],
+};
+
+const sanitizeUser = (user: IUser) => {
+  const normalizedRole = normalizeAdminRole(user.role);
+  const safeRole = normalizedRole === "admin" || normalizedRole === "editor" || normalizedRole === "viewer"
+    ? "admin_5"
+    : normalizedRole;
+
+  return {
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    role: safeRole,
+    roleLabel: roleLabels[safeRole as keyof typeof roleLabels] || safeRole,
+    permissions: permissionsByRole[safeRole as keyof typeof permissionsByRole] || [],
+    isActive: user.isActive,
+    createdAt: user.createdAt,
+  };
+};
 
 const getBootstrapSecret = (req: Request) =>
   req.headers["x-admin-bootstrap-secret"] || req.body?.bootstrapSecret;
@@ -31,6 +69,30 @@ const getBootstrapSecret = (req: Request) =>
 const hasValidBootstrapSecret = (req: Request) =>
   Boolean(ADMIN_BOOTSTRAP_SECRET) &&
   getBootstrapSecret(req) === ADMIN_BOOTSTRAP_SECRET;
+
+const isCreatableRole = (role: string): role is CreatableAdminRole =>
+  allowedRoles.includes(role as CreatableAdminRole);
+
+const canManageTargetRole = (actorRole: string | undefined, targetRole: string) => {
+  const actor = normalizeAdminRole(actorRole);
+  const target = normalizeAdminRole(targetRole);
+
+  if (actor === "super_admin") return true;
+  if (actor === "admin_0") {
+    return !["super_admin", "admin_0", "admin"].includes(target);
+  }
+  return false;
+};
+
+const canAssignRole = (actorRole: string | undefined, nextRole: string) => {
+  const actor = normalizeAdminRole(actorRole);
+  const next = normalizeAdminRole(nextRole);
+
+  if (next === "super_admin") return false;
+  if (actor === "super_admin") return isCreatableRole(next);
+  if (actor === "admin_0") return isCreatableRole(next) && next !== "admin_0";
+  return false;
+};
 
 export const signup = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -54,7 +116,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
     const hashedPassword = await bcrypt.hash(password, 12);
     const newUser: IUser = new User({
       name,
-      email: email.toLowerCase().trim(),
+      email: String(email).toLowerCase().trim(),
       password: hashedPassword,
       role: "super_admin",
       isActive: true,
@@ -92,11 +154,12 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    const normalizedRole = normalizeAdminRole(user.role);
     const token = jwt.sign(
       {
         _id: user._id,
         email: user.email,
-        role: user.role,
+        role: normalizedRole,
         isActive: user.isActive,
       },
       JWT_SECRET,
@@ -115,7 +178,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 export const listAdmins = async (_req: Request, res: Response): Promise<void> => {
   try {
     const users = await User.find({}, "-password").sort({ createdAt: -1 });
-    res.status(200).json({ users });
+    res.status(200).json({ users: users.map((user) => sanitizeUser(user)) });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -123,19 +186,23 @@ export const listAdmins = async (_req: Request, res: Response): Promise<void> =>
 
 export const createAdmin = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email, password, role = "admin" } = req.body;
+    const { name, email, password, role = "admin_1" } = req.body;
+    const nextRole = normalizeAdminRole(String(role));
 
     if (!name || !email || !password) {
       res.status(400).json({ error: "Name, email and password are required." });
       return;
     }
 
-    if (!allowedRoles.includes(role as AdminRole)) {
-      res.status(400).json({ error: "Invalid role." });
+    if (!canAssignRole(req.user?.role, nextRole)) {
+      res.status(403).json({
+        error: "You are not allowed to create an admin with this level.",
+      });
       return;
     }
 
-    const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
+    const normalizedEmail = String(email).toLowerCase().trim();
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       res.status(400).json({ error: "Email is already in use." });
       return;
@@ -144,9 +211,9 @@ export const createAdmin = async (req: Request, res: Response): Promise<void> =>
     const hashedPassword = await bcrypt.hash(password, 12);
     const user: IUser = new User({
       name,
-      email: email.toLowerCase().trim(),
+      email: normalizedEmail,
       password: hashedPassword,
-      role,
+      role: nextRole,
       isActive: true,
     });
 
@@ -165,30 +232,39 @@ export const updateAdmin = async (req: Request, res: Response): Promise<void> =>
   try {
     const { id } = req.params;
     const { name, role, isActive, password } = req.body;
-    const update: Partial<Pick<IUser, "name" | "role" | "isActive" | "password">> = {};
+    const target = await User.findById(id);
 
-    if (name) update.name = name;
-    if (typeof isActive === "boolean") update.isActive = isActive;
-    if (role) {
-      if (!allowedRoles.includes(role as AdminRole)) {
-        res.status(400).json({ error: "Invalid role." });
-        return;
-      }
-      update.role = role;
-    }
-    if (password) update.password = await bcrypt.hash(password, 12);
-
-    const user = await User.findByIdAndUpdate(id, update, {
-      new: true,
-      runValidators: true,
-    }).select("-password");
-
-    if (!user) {
+    if (!target) {
       res.status(404).json({ error: "Admin user not found." });
       return;
     }
 
-    res.status(200).json({ message: "Admin user updated successfully.", user });
+    const isSelf = String(req.user?._id) === String(target._id);
+    const requestedRole = role ? normalizeAdminRole(String(role)) : normalizeAdminRole(target.role);
+
+    if (!canManageTargetRole(req.user?.role, target.role)) {
+      res.status(403).json({ error: "You are not allowed to manage this admin level." });
+      return;
+    }
+
+    if (role && !canAssignRole(req.user?.role, requestedRole)) {
+      res.status(403).json({ error: "You are not allowed to assign this admin level." });
+      return;
+    }
+
+    if (isSelf && (typeof isActive === "boolean" || (role && requestedRole !== normalizeAdminRole(target.role)))) {
+      res.status(400).json({ error: "You cannot disable your own account or change your own role." });
+      return;
+    }
+
+    if (name) target.name = name;
+    if (role) target.role = requestedRole;
+    if (typeof isActive === "boolean") target.isActive = isActive;
+    if (password) target.password = await bcrypt.hash(password, 12);
+
+    await target.save();
+
+    res.status(200).json({ message: "Admin user updated successfully.", user: sanitizeUser(target) });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -197,18 +273,24 @@ export const updateAdmin = async (req: Request, res: Response): Promise<void> =>
 export const deleteAdmin = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const target = await User.findById(id);
 
-    if (req.user?._id === id) {
-      res.status(400).json({ error: "You cannot delete your own account." });
-      return;
-    }
-
-    const user = await User.findByIdAndDelete(id);
-    if (!user) {
+    if (!target) {
       res.status(404).json({ error: "Admin user not found." });
       return;
     }
 
+    if (String(req.user?._id) === String(target._id)) {
+      res.status(400).json({ error: "You cannot delete your own account." });
+      return;
+    }
+
+    if (!canManageTargetRole(req.user?.role, target.role)) {
+      res.status(403).json({ error: "You are not allowed to delete this admin level." });
+      return;
+    }
+
+    await target.deleteOne();
     res.status(200).json({ message: "Admin user deleted successfully." });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
@@ -243,7 +325,7 @@ export const promoteExistingAdmin = async (
       return;
     }
 
-    res.status(200).json({ message: "User promoted to super admin.", user });
+    res.status(200).json({ message: "User promoted to super admin.", user: sanitizeUser(user as IUser) });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }

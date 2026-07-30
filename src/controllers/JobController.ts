@@ -75,11 +75,6 @@ export const getJob = async (req: Request, res: Response, next: NextFunction): P
 // Update job
 export const updateJob = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        // Check if user is admin
-        if (req.user?.role !== 'admin') {
-            res.status(403).json({ message: "Access denied. Only admins can update jobs." });
-            return;
-        }
 
         const job = await Job.findByIdAndUpdate(
             req.params.id,
@@ -104,11 +99,6 @@ export const updateJob = async (req: Request, res: Response, next: NextFunction)
 // Delete job
 export const deleteJob = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        // Check if user is admin
-        if (req.user?.role !== 'admin') {
-            res.status(403).json({ message: "Access denied. Only admins can delete jobs." });
-            return;
-        }
 
         const job = await Job.findByIdAndDelete(req.params.id);
         if (!job) {

@@ -5,7 +5,17 @@ dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET as string;
 
-type AdminRole = "super_admin" | "admin" | "editor" | "viewer";
+export type AdminRole =
+  | "super_admin"
+  | "admin_0"
+  | "admin_1"
+  | "admin_2"
+  | "admin_3"
+  | "admin_4"
+  | "admin_5"
+  | "admin"
+  | "editor"
+  | "viewer";
 
 interface AuthTokenPayload {
   _id: string;
@@ -14,13 +24,31 @@ interface AuthTokenPayload {
   isActive?: boolean;
 }
 
+const legacyRoleMap: Record<string, AdminRole> = {
+  admin: "admin_0",
+  editor: "admin_2",
+  viewer: "admin_4",
+};
+
+export const normalizeAdminRole = (role?: string): AdminRole => {
+  if (!role) return "admin_5";
+  return legacyRoleMap[role] || (role as AdminRole);
+};
+
+export const canAccessDashboard = (role?: string) =>
+  ["super_admin", "admin_0", "admin_1", "admin_2", "admin_3", "admin_4", "admin_5"].includes(
+    normalizeAdminRole(role)
+  );
+
+export const canManageAdminUsers = (role?: string) =>
+  ["super_admin", "admin_0"].includes(normalizeAdminRole(role));
+
 declare module "express-serve-static-core" {
   interface Request {
     user?: any;
   }
 }
 
-// Middleware for authentication
 export const authenticateUser = (
   req: Request,
   res: Response,
@@ -55,7 +83,7 @@ export const authenticateUser = (
       return;
     }
 
-    req.user = decoded;
+    req.user = { ...decoded, role: normalizeAdminRole(decoded.role) };
     next();
   } catch (err: any) {
     console.error("Token verification error:", err.message);
@@ -83,7 +111,7 @@ export const authorizeRoles = (roles: string[]) => {
       return;
     }
 
-    if (!roles.includes(req.user.role)) {
+    if (!roles.includes(normalizeAdminRole(req.user.role))) {
       res.status(403).json({ message: "Access denied. Insufficient role." });
       return;
     }
@@ -104,8 +132,28 @@ export const adminOnly = (
     return;
   }
 
-  if (!["super_admin", "admin"].includes(req.user.role)) {
+  if (!canAccessDashboard(req.user.role)) {
     res.status(403).json({ message: "Access denied. Admin role required." });
+    return;
+  }
+
+  next();
+};
+
+export const adminUserManagerOnly = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  if (!req.user) {
+    res
+      .status(401)
+      .json({ message: "Access denied. Admin authentication required." });
+    return;
+  }
+
+  if (!canManageAdminUsers(req.user.role)) {
+    res.status(403).json({ message: "Access denied. User management role required." });
     return;
   }
 
@@ -124,7 +172,7 @@ export const superAdminOnly = (
     return;
   }
 
-  if (req.user.role !== "super_admin") {
+  if (normalizeAdminRole(req.user.role) !== "super_admin") {
     res.status(403).json({ message: "Access denied. Super admin role required." });
     return;
   }
