@@ -1,7 +1,8 @@
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
+import crypto from "crypto";
 import jwt from "jsonwebtoken";
-import User, { IUser } from "../models/User";
+import User, { IUser, IUserMailboxAccess } from "../models/User";
 import { getEffectiveAdminRole, normalizeAdminRole } from "../middleware/authMiddleware";
 import dotenv from "dotenv";
 
@@ -9,6 +10,7 @@ dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const ADMIN_BOOTSTRAP_SECRET = process.env.ADMIN_BOOTSTRAP_SECRET;
+const FRONTEND_URL = (process.env.FRONTEND_URL || "https://creativapoeta.com").replace(/\/$/, "");
 
 if (!JWT_SECRET) {
   throw new Error("JWT_SECRET is not defined in the environment variables.");
@@ -26,7 +28,7 @@ const allowedRoles = [
 type CreatableAdminRole = (typeof allowedRoles)[number];
 
 const roleLabels: Record<CreatableAdminRole | "super_admin", string> = {
-  super_admin: "Superadmin",
+  super_admin: "Super Admin",
   admin_0: "Niveau 0 - Direction",
   admin_1: "Niveau 1 - Operations",
   admin_2: "Niveau 2 - Contenu & SEO",
@@ -45,6 +47,27 @@ const permissionsByRole: Record<CreatableAdminRole | "super_admin", string[]> = 
   admin_5: ["assigned:read", "assigned:reply"],
 };
 
+const PASSWORD_MIN_LENGTH = 8;
+const SHARED_MAILBOXES = ["contact@creativapoeta.com", "contact@creativapoeta.be"];
+
+const normalizeEmail = (email: unknown) => String(email || "").toLowerCase().trim();
+
+const sanitizeMailboxAccess = (mailboxAccess: unknown, personalEmail: string): IUserMailboxAccess[] => {
+  const rows = Array.isArray(mailboxAccess) ? mailboxAccess : [];
+  const normalizedRows: IUserMailboxAccess[] = rows
+    .map((item: any): IUserMailboxAccess => ({
+      address: normalizeEmail(item?.address),
+      permission: ["read", "send", "manage"].includes(item?.permission) ? item.permission : "read",
+      type: item?.type === "personal" ? "personal" : "shared",
+    }))
+    .filter((item) => item.address);
+
+  const byAddress = new Map<string, IUserMailboxAccess>();
+  byAddress.set(personalEmail, { address: personalEmail, permission: "manage", type: "personal" });
+  normalizedRows.forEach((item) => byAddress.set(item.address, item));
+  return Array.from(byAddress.values());
+};
+
 const sanitizeUser = (user: IUser) => {
   const normalizedRole = getEffectiveAdminRole(user.role, user.email);
   const safeRole = normalizedRole === "admin" || normalizedRole === "editor" || normalizedRole === "viewer"
@@ -59,8 +82,41 @@ const sanitizeUser = (user: IUser) => {
     roleLabel: roleLabels[safeRole as keyof typeof roleLabels] || safeRole,
     permissions: permissionsByRole[safeRole as keyof typeof permissionsByRole] || [],
     isActive: user.isActive,
+    accountStatus: user.accountStatus || (user.password ? "active" : "pending"),
+    mailboxAccess: user.mailboxAccess || [],
     createdAt: user.createdAt,
   };
+};
+
+const signAdminToken = (user: IUser) => {
+  const normalizedRole = getEffectiveAdminRole(user.role, user.email);
+  return jwt.sign(
+    {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: normalizedRole,
+      isActive: user.isActive,
+    },
+    JWT_SECRET,
+    { expiresIn: "1d" }
+  );
+};
+
+const createPlainToken = () => crypto.randomBytes(32).toString("hex");
+const hashToken = (token: string) => crypto.createHash("sha256").update(token).digest("hex");
+const buildResetLink = (email: string, token: string) =>
+  `${FRONTEND_URL}/secure-admin-login-2024?resetToken=${token}&email=${encodeURIComponent(email)}`;
+
+const validatePassword = (password: unknown, confirmPassword?: unknown) => {
+  const nextPassword = String(password || "");
+  if (nextPassword.length < PASSWORD_MIN_LENGTH) {
+    return `Password must contain at least ${PASSWORD_MIN_LENGTH} characters.`;
+  }
+  if (confirmPassword !== undefined && nextPassword !== String(confirmPassword || "")) {
+    return "Passwords do not match.";
+  }
+  return null;
 };
 
 const getBootstrapSecret = (req: Request) =>
@@ -107,19 +163,32 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
     }
 
     const { name, email, password } = req.body;
+    const normalizedEmail = normalizeEmail(email);
 
-    if (!name || !email || !password) {
+    if (!name || !normalizedEmail || !password) {
       res.status(400).json({ error: "Name, email and password are required." });
+      return;
+    }
+
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      res.status(400).json({ error: passwordError });
       return;
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
     const newUser: IUser = new User({
       name,
-      email: String(email).toLowerCase().trim(),
+      email: normalizedEmail,
       password: hashedPassword,
       role: "super_admin",
       isActive: true,
+      accountStatus: "active",
+      passwordSetAt: new Date(),
+      mailboxAccess: sanitizeMailboxAccess(
+        SHARED_MAILBOXES.map((address) => ({ address, permission: "manage", type: "shared" })),
+        normalizedEmail
+      ),
     });
 
     await newUser.save();
@@ -136,38 +205,34 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
+    const user = await User.findOne({ email: normalizeEmail(email) });
 
-    const user = await User.findOne({ email: String(email || "").toLowerCase().trim() });
     if (!user) {
       res.status(400).json({ error: "Invalid email or password." });
       return;
     }
 
-    if (!user.isActive) {
+    if (!user.isActive || user.accountStatus === "disabled") {
       res.status(403).json({ error: "This admin account is disabled." });
       return;
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    if (!user.password || user.accountStatus === "pending") {
+      res.status(403).json({
+        code: "ACCOUNT_PENDING",
+        error: "This admin account has not been activated yet.",
+      });
+      return;
+    }
+
+    const isMatch = await bcrypt.compare(String(password || ""), user.password);
     if (!isMatch) {
       res.status(400).json({ error: "Invalid email or password." });
       return;
     }
 
-    const normalizedRole = getEffectiveAdminRole(user.role, user.email);
-    const token = jwt.sign(
-      {
-        _id: user._id,
-        email: user.email,
-        role: normalizedRole,
-        isActive: user.isActive,
-      },
-      JWT_SECRET,
-      { expiresIn: "1d" }
-    );
-
     res.status(200).json({
-      token,
+      token: signAdminToken(user),
       user: sanitizeUser(user),
     });
   } catch (error) {
@@ -175,9 +240,158 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
+export const checkActivation = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      res.status(404).json({ error: "No pending admin account found for this email." });
+      return;
+    }
+
+    if (!user.isActive || user.accountStatus === "disabled") {
+      res.status(403).json({ error: "This admin account is disabled." });
+      return;
+    }
+
+    if (user.password && user.accountStatus === "active") {
+      res.status(409).json({ error: "This admin account is already active. Please log in." });
+      return;
+    }
+
+    res.status(200).json({ message: "Admin account found. You can create your password.", user: sanitizeUser(user) });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+export const activateAccount = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const { password, confirmPassword } = req.body;
+    const passwordError = validatePassword(password, confirmPassword);
+
+    if (passwordError) {
+      res.status(400).json({ error: passwordError });
+      return;
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      res.status(404).json({ error: "No pending admin account found for this email." });
+      return;
+    }
+
+    if (!user.isActive || user.accountStatus === "disabled") {
+      res.status(403).json({ error: "This admin account is disabled." });
+      return;
+    }
+
+    if (user.password && user.accountStatus === "active") {
+      res.status(409).json({ error: "This admin account is already active. Please log in." });
+      return;
+    }
+
+    user.password = await bcrypt.hash(String(password), 12);
+    user.accountStatus = "active";
+    user.isActive = true;
+    user.passwordSetAt = new Date();
+    await user.save();
+
+    res.status(200).json({ token: signAdminToken(user), user: sanitizeUser(user) });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+export const changePassword = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { currentPassword, password, confirmPassword } = req.body;
+    const user = await User.findById(req.user?._id);
+
+    if (!user || !user.password) {
+      res.status(404).json({ error: "Admin user not found." });
+      return;
+    }
+
+    const matches = await bcrypt.compare(String(currentPassword || ""), user.password);
+    if (!matches) {
+      res.status(400).json({ error: "Current password is incorrect." });
+      return;
+    }
+
+    const passwordError = validatePassword(password, confirmPassword);
+    if (passwordError) {
+      res.status(400).json({ error: passwordError });
+      return;
+    }
+
+    user.password = await bcrypt.hash(String(password), 12);
+    user.passwordSetAt = new Date();
+    await user.save();
+
+    res.status(200).json({ message: "Password changed successfully." });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+export const requestPasswordReset = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const user = await User.findOne({ email });
+
+    if (user && user.isActive && user.accountStatus !== "disabled") {
+      const token = createPlainToken();
+      user.resetTokenHash = hashToken(token);
+      user.resetTokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+      await user.save();
+    }
+
+    res.status(200).json({
+      message: "If this CP admin account exists, a reset request has been recorded. Ask a super admin or level 0 admin for the reset link.",
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+export const completePasswordReset = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const token = String(req.body?.token || "");
+    const { password, confirmPassword } = req.body;
+    const passwordError = validatePassword(password, confirmPassword);
+
+    if (passwordError) {
+      res.status(400).json({ error: passwordError });
+      return;
+    }
+
+    const user = await User.findOne({ email, resetTokenHash: hashToken(token) });
+    if (!user || !user.resetTokenExpiresAt || user.resetTokenExpiresAt.getTime() < Date.now()) {
+      res.status(400).json({ error: "Invalid or expired reset link." });
+      return;
+    }
+
+    user.password = await bcrypt.hash(String(password), 12);
+    user.accountStatus = "active";
+    user.isActive = true;
+    user.passwordSetAt = new Date();
+    user.resetTokenHash = undefined;
+    user.resetTokenExpiresAt = undefined;
+    await user.save();
+
+    res.status(200).json({ token: signAdminToken(user), user: sanitizeUser(user) });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
 export const listAdmins = async (_req: Request, res: Response): Promise<void> => {
   try {
-    const users = await User.find({}, "-password").sort({ createdAt: -1 });
+    const users = await User.find({}, "-password -resetTokenHash").sort({ createdAt: -1 });
     res.status(200).json({ users: users.map((user) => sanitizeUser(user)) });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
@@ -186,11 +400,12 @@ export const listAdmins = async (_req: Request, res: Response): Promise<void> =>
 
 export const createAdmin = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email, password, role = "admin_1" } = req.body;
+    const { name, email, role = "admin_1", mailboxAccess } = req.body;
     const nextRole = normalizeAdminRole(String(role));
+    const normalizedEmail = normalizeEmail(email);
 
-    if (!name || !email || !password) {
-      res.status(400).json({ error: "Name, email and password are required." });
+    if (!name || !normalizedEmail) {
+      res.status(400).json({ error: "Name and email are required." });
       return;
     }
 
@@ -201,26 +416,26 @@ export const createAdmin = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    const normalizedEmail = String(email).toLowerCase().trim();
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       res.status(400).json({ error: "Email is already in use." });
       return;
     }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
     const user: IUser = new User({
       name,
       email: normalizedEmail,
-      password: hashedPassword,
+      password: "",
       role: nextRole,
       isActive: true,
+      accountStatus: "pending",
+      mailboxAccess: sanitizeMailboxAccess(mailboxAccess, normalizedEmail),
     });
 
     await user.save();
 
     res.status(201).json({
-      message: "Admin user created successfully.",
+      message: "Admin user created. The user must activate their account and choose a password.",
       user: sanitizeUser(user),
     });
   } catch (error) {
@@ -231,7 +446,7 @@ export const createAdmin = async (req: Request, res: Response): Promise<void> =>
 export const updateAdmin = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { name, role, isActive, password } = req.body;
+    const { name, role, isActive, mailboxAccess } = req.body;
     const target = await User.findById(id);
 
     if (!target) {
@@ -259,12 +474,45 @@ export const updateAdmin = async (req: Request, res: Response): Promise<void> =>
 
     if (name) target.name = name;
     if (role) target.role = requestedRole;
-    if (typeof isActive === "boolean") target.isActive = isActive;
-    if (password) target.password = await bcrypt.hash(password, 12);
+    if (typeof isActive === "boolean") {
+      target.isActive = isActive;
+      target.accountStatus = isActive ? (target.password ? "active" : "pending") : "disabled";
+    }
+    if (mailboxAccess !== undefined) {
+      target.mailboxAccess = sanitizeMailboxAccess(mailboxAccess, target.email) as any;
+    }
 
     await target.save();
 
     res.status(200).json({ message: "Admin user updated successfully.", user: sanitizeUser(target) });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+export const createAdminPasswordReset = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const target = await User.findById(req.params.id);
+
+    if (!target) {
+      res.status(404).json({ error: "Admin user not found." });
+      return;
+    }
+
+    if (!canManageTargetRole(req.user?.role, target.role)) {
+      res.status(403).json({ error: "You are not allowed to reset this admin password." });
+      return;
+    }
+
+    const token = createPlainToken();
+    target.resetTokenHash = hashToken(token);
+    target.resetTokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+    await target.save();
+
+    res.status(200).json({
+      message: "Password reset link generated. It expires in 1 hour.",
+      resetLink: buildResetLink(target.email, token),
+    });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -315,10 +563,10 @@ export const promoteExistingAdmin = async (
 
     const { email } = req.body;
     const user = await User.findOneAndUpdate(
-      { email: String(email || "").toLowerCase().trim() },
-      { role: "super_admin", isActive: true },
+      { email: normalizeEmail(email) },
+      { role: "super_admin", isActive: true, accountStatus: "active" },
       { new: true, runValidators: true }
-    ).select("-password");
+    ).select("-password -resetTokenHash");
 
     if (!user) {
       res.status(404).json({ error: "Admin user not found." });
@@ -366,3 +614,5 @@ export const verifyToken = async (
     res.status(500).json({ error: (error as Error).message });
   }
 };
+
+

@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import EmailMessage from "../models/EmailMessage";
 import OutboundEmail from "../models/OutboundEmail";
+import User from "../models/User";
+import { getEffectiveAdminRole } from "../middleware/authMiddleware";
 import { syncConfiguredMailboxes } from "../services/emailSyncService";
 import sendEmail from "../utils/sendEmail";
 import { escapeHtml, formatParagraphs } from "../utils/emailTemplate";
@@ -25,6 +27,45 @@ const parseEmailList = (value: unknown): string[] => {
 
 const getAdminName = (req: Request) =>
   (req.user as any)?.name || (req.user as any)?.email || "Admin";
+const getAdminEmail = (req: Request) => String((req.user as any)?.email || "").toLowerCase().trim();
+
+const canSeeAllMailboxes = (req: Request) =>
+  ["super_admin", "admin_0"].includes(getEffectiveAdminRole((req.user as any)?.role, (req.user as any)?.email));
+
+const getAllowedMailboxAddresses = async (req: Request) => {
+  if (canSeeAllMailboxes(req)) return null;
+
+  const currentEmail = getAdminEmail(req);
+  const currentUserId = (req.user as any)?._id || (req.user as any)?.id;
+  const user = currentUserId
+    ? await User.findById(currentUserId).select("email mailboxAccess role isActive accountStatus")
+    : await User.findOne({ email: currentEmail }).select("email mailboxAccess role isActive accountStatus");
+  const addresses = new Set<string>();
+
+  if (currentEmail) addresses.add(currentEmail);
+  if (user?.email) addresses.add(String(user.email).toLowerCase().trim());
+  (user?.mailboxAccess || []).forEach((mailbox) => {
+    if (mailbox.address) addresses.add(String(mailbox.address).toLowerCase().trim());
+  });
+
+  return Array.from(addresses).filter(Boolean);
+};
+
+const applyInboundMailboxAccess = async (req: Request, filter: any) => {
+  const allowedAddresses = await getAllowedMailboxAddresses(req);
+  if (!allowedAddresses) return;
+  filter.$and = [
+    ...(filter.$and || []),
+    {
+      $or: [{ mailboxAddress: { $in: allowedAddresses } }, { mailbox: { $in: allowedAddresses } }],
+    },
+  ];
+};
+
+const applyOutboundOwnerAccess = (req: Request, filter: any) => {
+  if (canSeeAllMailboxes(req)) return;
+  filter.createdByEmail = getAdminEmail(req);
+};
 const getAdminNotificationEmail = () =>
   process.env.ADMIN_NOTIFICATION_EMAIL ||
   process.env.ADMIN_EMAIL ||
@@ -224,6 +265,7 @@ export const getEmails = async (req: Request, res: Response): Promise<void> => {
 
     if (allowedStatuses.includes(status)) filter.status = status;
     if (mailbox !== "all") filter.mailbox = mailbox;
+    await applyInboundMailboxAccess(req, filter);
 
     if (search) {
       filter.$or = [
@@ -239,7 +281,7 @@ export const getEmails = async (req: Request, res: Response): Promise<void> => {
     const [emails, totalEmails, counts] = await Promise.all([
       EmailMessage.find(filter).sort({ receivedAt: -1 }).skip(skip).limit(limit),
       EmailMessage.countDocuments(filter),
-      EmailMessage.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
+      EmailMessage.aggregate([{ $match: filter }, { $group: { _id: "$status", count: { $sum: 1 } } }]),
     ]);
 
     res.status(200).json({
@@ -274,6 +316,7 @@ export const getOutboundEmails = async (req: Request, res: Response): Promise<vo
     const folder = req.query.folder === "sent" ? "sent" : "draft";
     const search = String(req.query.search || "").trim();
     const filter: any = { folder };
+    applyOutboundOwnerAccess(req, filter);
 
     if (search) {
       filter.$or = [
@@ -288,7 +331,7 @@ export const getOutboundEmails = async (req: Request, res: Response): Promise<vo
     const [emails, totalEmails, counts] = await Promise.all([
       OutboundEmail.find(filter).sort({ updatedAt: -1 }).skip(skip).limit(limit),
       OutboundEmail.countDocuments(filter),
-      OutboundEmail.aggregate([{ $group: { _id: "$folder", count: { $sum: 1 } } }]),
+      OutboundEmail.aggregate([{ $match: filter }, { $group: { _id: "$folder", count: { $sum: 1 } } }]),
     ]);
 
     res.status(200).json({
@@ -318,7 +361,9 @@ export const getOutboundEmails = async (req: Request, res: Response): Promise<vo
 
 export const getEmail = async (req: Request, res: Response): Promise<void> => {
   try {
-    const email = await EmailMessage.findById(req.params.id);
+    const filter: any = { _id: req.params.id };
+    await applyInboundMailboxAccess(req, filter);
+    const email = await EmailMessage.findOne(filter);
 
     if (!email) {
       res.status(404).json({ message: "Email not found" });
@@ -348,6 +393,8 @@ export const saveDraftEmail = async (req: Request, res: Response): Promise<void>
       status: "draft",
       createdBy: getAdminName(req),
       updatedBy: getAdminName(req),
+      createdByEmail: getAdminEmail(req),
+      updatedByEmail: getAdminEmail(req),
     });
 
     res.status(201).json({ message: "Draft saved", email });
@@ -362,9 +409,11 @@ export const saveDraftEmail = async (req: Request, res: Response): Promise<void>
 export const updateDraftEmail = async (req: Request, res: Response): Promise<void> => {
   try {
     const payload = getOutboundPayload(req);
+    const draftFilter: any = { _id: req.params.id, folder: "draft" };
+    applyOutboundOwnerAccess(req, draftFilter);
     const email = await OutboundEmail.findOneAndUpdate(
-      { _id: req.params.id, folder: "draft" },
-      { ...payload, updatedBy: getAdminName(req) },
+      draftFilter,
+      { ...payload, updatedBy: getAdminName(req), updatedByEmail: getAdminEmail(req) },
       { new: true }
     );
 
@@ -389,8 +438,8 @@ export const sendComposedEmail = async (req: Request, res: Response): Promise<vo
     const draftId = String(req.body?.draftId || "").trim();
 
     const email = draftId
-      ? await OutboundEmail.findByIdAndUpdate(draftId, sentPayload, { new: true })
-      : await OutboundEmail.create({ ...sentPayload, createdBy: getAdminName(req) });
+      ? await OutboundEmail.findOneAndUpdate({ _id: draftId, ...(canSeeAllMailboxes(req) ? {} : { createdByEmail: getAdminEmail(req) }) }, sentPayload, { new: true })
+      : await OutboundEmail.create({ ...sentPayload, createdBy: getAdminName(req), createdByEmail: getAdminEmail(req) });
 
     res.status(200).json({ message: "Email sent", email });
   } catch (error: any) {
@@ -403,7 +452,9 @@ export const sendComposedEmail = async (req: Request, res: Response): Promise<vo
 
 export const sendDraftEmail = async (req: Request, res: Response): Promise<void> => {
   try {
-    const draft = await OutboundEmail.findOne({ _id: req.params.id, folder: "draft" });
+    const draftFilter: any = { _id: req.params.id, folder: "draft" };
+    applyOutboundOwnerAccess(req, draftFilter);
+    const draft = await OutboundEmail.findOne(draftFilter);
 
     if (!draft) {
       res.status(404).json({ message: "Draft not found" });
@@ -430,6 +481,7 @@ export const sendDraftEmail = async (req: Request, res: Response): Promise<void>
       draft.status = "failed";
       draft.error = sendError?.message || "Unknown error";
       draft.updatedBy = getAdminName(req);
+      draft.updatedByEmail = getAdminEmail(req);
       await draft.save();
       res.status(400).json({
         message: "Failed to send draft",
@@ -447,7 +499,9 @@ export const sendDraftEmail = async (req: Request, res: Response): Promise<void>
 
 export const deleteOutboundEmail = async (req: Request, res: Response): Promise<void> => {
   try {
-    const email = await OutboundEmail.findByIdAndDelete(req.params.id);
+    const outboundDeleteFilter: any = { _id: req.params.id };
+    applyOutboundOwnerAccess(req, outboundDeleteFilter);
+    const email = await OutboundEmail.findOneAndDelete(outboundDeleteFilter);
 
     if (!email) {
       res.status(404).json({ message: "Outbound email not found" });
@@ -472,7 +526,9 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const email = await EmailMessage.findById(req.params.id);
+    const filter: any = { _id: req.params.id };
+    await applyInboundMailboxAccess(req, filter);
+    const email = await EmailMessage.findOne(filter);
 
     if (!email) {
       res.status(404).json({ message: "Email not found" });
@@ -530,7 +586,9 @@ export const updateEmailStatus = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const email = await EmailMessage.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    const statusFilter: any = { _id: req.params.id };
+    await applyInboundMailboxAccess(req, statusFilter);
+    const email = await EmailMessage.findOneAndUpdate(statusFilter, { status }, { new: true });
 
     if (!email) {
       res.status(404).json({ message: "Email not found" });
@@ -548,7 +606,9 @@ export const updateEmailStatus = async (req: Request, res: Response): Promise<vo
 
 export const deleteEmail = async (req: Request, res: Response): Promise<void> => {
   try {
-    const email = await EmailMessage.findByIdAndDelete(req.params.id);
+    const deleteFilter: any = { _id: req.params.id };
+    await applyInboundMailboxAccess(req, deleteFilter);
+    const email = await EmailMessage.findOneAndDelete(deleteFilter);
 
     if (!email) {
       res.status(404).json({ message: "Email not found" });
@@ -563,3 +623,10 @@ export const deleteEmail = async (req: Request, res: Response): Promise<void> =>
     });
   }
 };
+
+
+
+
+
+
+
