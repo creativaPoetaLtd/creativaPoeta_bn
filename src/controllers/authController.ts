@@ -30,12 +30,12 @@ type CreatableAdminRole = (typeof allowedRoles)[number];
 
 const roleLabels: Record<CreatableAdminRole | "super_admin", string> = {
   super_admin: "Admin",
-  admin_0: "Level 0 - Direction",
-  admin_1: "Level 1 - Operations",
-  admin_2: "Level 2 - Content & SEO",
-  admin_3: "Level 3 - Support & Email",
-  admin_4: "Level 4 - Reporting",
-  admin_5: "Level 5 - Limited Access",
+  admin_0: "Direction",
+  admin_1: "Operations",
+  admin_2: "Content & SEO",
+  admin_3: "Support & Email",
+  admin_4: "Reporting",
+  admin_5: "Limited Access",
 };
 
 const allPermissionKeys = [

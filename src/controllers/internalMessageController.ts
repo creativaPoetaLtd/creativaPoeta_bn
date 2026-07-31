@@ -29,13 +29,13 @@ const CPG_GROUP_KEYS = [
   "CPG45",
 ];
 
-const levelColors: Record<number, { label: string; color: string; background: string }> = {
-  0: { label: "Level 0", color: "#7c2d12", background: "#f5d0b8" },
-  1: { label: "Level 1", color: "#1d4ed8", background: "#dbeafe" },
-  2: { label: "Level 2", color: "#047857", background: "#d1fae5" },
-  3: { label: "Level 3", color: "#c2410c", background: "#ffedd5" },
-  4: { label: "Level 4", color: "#a16207", background: "#fef3c7" },
-  5: { label: "Level 5", color: "#475569", background: "#f8fafc" },
+const levelColors: Record<number, { color: string; background: string }> = {
+  0: { color: "#7c2d12", background: "#f5d0b8" },
+  1: { color: "#1d4ed8", background: "#dbeafe" },
+  2: { color: "#047857", background: "#d1fae5" },
+  3: { color: "#c2410c", background: "#ffedd5" },
+  4: { color: "#a16207", background: "#fef3c7" },
+  5: { color: "#475569", background: "#f8fafc" },
 };
 
 const getGroupLevels = (groupKey: string): number[] => {
@@ -48,12 +48,7 @@ const getGroupLevels = (groupKey: string): number[] => {
   return Array.from({ length: end - start + 1 }, (_, index) => start + index);
 };
 
-const groupLabel = (groupKey: string): string => {
-  const levels = getGroupLevels(groupKey);
-  if (!levels.length) return groupKey;
-  if (levels.length === 1) return `${groupKey} - Level ${levels[0]}`;
-  return `${groupKey} - Levels ${levels[0]}-${levels[levels.length - 1]}`;
-};
+const groupLabel = (groupKey: string): string => groupKey;
 
 const groupMeta = (groupKey: string) => {
   const levels = getGroupLevels(groupKey);
@@ -163,7 +158,7 @@ const getUserDirectory = async () => {
         name: user.name,
         email: normalizeEmail(user.email),
         role,
-        roleLabel: role.startsWith("admin_") ? role.replace("admin_", "Level ") : "Admin",
+        roleLabel: role.startsWith("admin_") ? role.replace("admin_", "CPG") : "Admin",
       };
     })
     .filter((user) => user.email && user.role !== "super_admin");
