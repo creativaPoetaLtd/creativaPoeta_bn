@@ -25,6 +25,68 @@ export const formatParagraphs = (value = "") =>
     .map((paragraph) => `<p style="margin:0 0 14px;">${paragraph}</p>`)
     .join("");
 
+
+
+export interface QuotedEmailBlockOptions {
+  mode: "reply" | "forward";
+  fromName?: string;
+  fromEmail?: string;
+  to?: string[];
+  cc?: string[];
+  subject?: string;
+  sentAt?: string | Date;
+  html?: string;
+  text?: string;
+}
+
+const formatEmailDate = (value?: string | Date) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat("en-GB", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Brussels",
+  }).format(date);
+};
+
+export const renderQuotedEmailBlock = ({
+  mode,
+  fromName,
+  fromEmail,
+  to = [],
+  cc = [],
+  subject = "",
+  sentAt,
+  html,
+  text = "",
+}: QuotedEmailBlockOptions) => {
+  const sender = [fromName, fromEmail ? `<${fromEmail}>` : ""].filter(Boolean).join(" ");
+  const readableBody = html && html.trim() ? html : formatParagraphs(text);
+  const heading = mode === "forward" ? "Forwarded message" : "Original message";
+
+  return `
+    <div style="margin:28px 0 0;padding:18px 0 0;border-top:1px solid #d0d5dd;color:#526074;font-size:13px;line-height:1.55;">
+      <div style="margin:0 0 10px;color:#344054;font-weight:800;">${heading}</div>
+      <div style="margin:0 0 14px;color:#475467;">
+        <div><strong>From:</strong> ${escapeHtml(sender || fromEmail || "Unknown sender")}</div>
+        ${sentAt ? `<div><strong>Sent:</strong> ${escapeHtml(formatEmailDate(sentAt))}</div>` : ""}
+        ${to.length ? `<div><strong>To:</strong> ${escapeHtml(to.join(", "))}</div>` : ""}
+        ${cc.length ? `<div><strong>Cc:</strong> ${escapeHtml(cc.join(", "))}</div>` : ""}
+        <div><strong>Subject:</strong> ${escapeHtml(subject || "(No subject)")}</div>
+      </div>
+      <div style="margin:0 0 0 14px;padding:0 0 0 14px;border-left:3px solid #e4e7ec;color:#667085;">
+        ${readableBody || "<p>No readable message content.</p>"}
+      </div>
+    </div>
+  `;
+};
+
 const renderSignature = (signature?: string) => {
   const cleanSignature = String(signature || "").trim();
   if (!cleanSignature) return "";

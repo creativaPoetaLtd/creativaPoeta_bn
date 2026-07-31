@@ -5,6 +5,7 @@ import {
   cronSyncEmails,
   deleteEmail,
   deleteOutboundEmail,
+  forwardEmail,
   getEmail,
   getEmailSummary,
   getEmails,
@@ -47,7 +48,9 @@ router.get("/:id", getEmail);
 router.post("/:id/claim", claimEmail);
 router.post("/:id/release", releaseEmail);
 router.post("/:id/reply", replyToEmail);
+router.post("/:id/forward", emailAttachmentUpload.array("attachments", 8), forwardEmail);
 router.put("/:id/status", updateEmailStatus);
 router.delete("/:id", deleteEmail);
 
 export default router;
+

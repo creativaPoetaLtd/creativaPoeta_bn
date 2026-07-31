@@ -5,15 +5,18 @@ import User from "../models/User";
 import { getEffectiveAdminRole } from "../middleware/authMiddleware";
 import { syncConfiguredMailboxes } from "../services/emailSyncService";
 import sendEmail from "../utils/sendEmail";
-import { escapeHtml, formatParagraphs } from "../utils/emailTemplate";
+import { escapeHtml, formatParagraphs, renderQuotedEmailBlock } from "../utils/emailTemplate";
 
 const allowedStatuses = ["new", "read", "replied", "archived"];
 const MAX_ATTACHMENT_TOTAL_BYTES = 8 * 1024 * 1024;
 const MAX_ATTACHMENT_COUNT = 8;
 
 const normalizeReplySubject = (subject: string) =>
-  /^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim() || "Votre message"}`;
+  /^re:/i.test(subject.trim()) ? subject.trim() : `Re: ${subject.trim() || "Your message"}`;
 
+
+const normalizeForwardSubject = (subject: string) =>
+  /^(fw|fwd):/i.test(subject.trim()) ? subject.trim() : `Fwd: ${subject.trim() || "Forwarded message"}`;
 
 const parseQueryValues = (value: unknown): string[] =>
   String(value || "")
@@ -765,17 +768,19 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
 
     const replySubject = normalizeReplySubject(subject || email.subject);
     const cleanMessage = String(replyMessage).trim();
-    const originalText = email.text || email.preview || "";
     const content = `
-      <p>Bonjour${email.fromName ? ` ${escapeHtml(email.fromName)}` : ""},</p>
       ${formatParagraphs(cleanMessage)}
-      <p>Vous pouvez repondre directement a cet email si vous souhaitez preciser quelque chose.</p>
-      <p style="font-size:13px;color:#64748b;margin:24px 0 8px;"><strong>Message original</strong></p>
-      <div style="font-size:13px;color:#64748b;">
-        <p style="margin:0 0 8px;"><strong>De:</strong> ${escapeHtml(email.fromEmail)}</p>
-        <p style="margin:0 0 8px;"><strong>Sujet:</strong> ${escapeHtml(email.subject)}</p>
-        ${formatParagraphs(originalText.slice(0, 1600))}
-      </div>
+      ${renderQuotedEmailBlock({
+        mode: "reply",
+        fromName: email.fromName,
+        fromEmail: email.fromEmail,
+        to: email.to || [],
+        cc: email.cc || [],
+        subject: email.subject,
+        sentAt: email.receivedAt,
+        html: email.html,
+        text: email.text || email.preview || "",
+      })}
     `;
 
     const replyFromEmail = isCpMailbox(email.mailboxAddress || "") ? email.mailboxAddress : undefined;
@@ -788,9 +793,9 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
     });
 
     if (!email.assignedToEmail) {
-      assignEmailToCurrentUser(email, req, "Ticket pris en charge pendant la reponse");
+      assignEmailToCurrentUser(email, req, "Ticket assigned during reply");
     } else if (email.assignedToEmail !== getAdminEmail(req)) {
-      addEmailActivity(email, req, "replied", `Reponse ajoutee alors que le ticket est pris par ${email.assignedToName || email.assignedToEmail}`);
+      addEmailActivity(email, req, "replied", `Reply added while ticket is assigned to ${email.assignedToName || email.assignedToEmail}`);
     }
 
     email.status = "replied";
@@ -798,7 +803,7 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
     email.replySubject = replySubject;
     email.repliedAt = new Date();
     email.repliedBy = getAdminName(req);
-    addEmailActivity(email, req, "replied", `Reponse envoyee: ${replySubject}`);
+    addEmailActivity(email, req, "replied", `Reply sent: ${replySubject}`);
     await email.save();
 
     res.status(200).json({ message: "Reply sent successfully", email: await enrichEmailOwnerRole(email) });
@@ -810,6 +815,93 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
   }
 };
 
+export const forwardEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const payload = getOutboundPayload(req);
+
+    if (!payload.to.length) {
+      res.status(400).json({ message: "At least one recipient is required." });
+      return;
+    }
+
+    if (!payload.body) {
+      res.status(400).json({ message: "Forward message is required." });
+      return;
+    }
+
+    const filter: any = { _id: req.params.id };
+    await applyInboundMailboxAccess(req, filter);
+    const email = await EmailMessage.findOne(filter);
+
+    if (!email) {
+      res.status(404).json({ message: "Email not found" });
+      return;
+    }
+
+    if (payload.fromEmail && !isCpMailbox(payload.fromEmail)) {
+      res.status(400).json({ message: "Sender must be a Creativa Poeta mailbox." });
+      return;
+    }
+
+    const allowedSenders = await getAllowedMailboxAddresses(req);
+    if (payload.fromEmail && !allowedSenders.includes(payload.fromEmail)) {
+      res.status(403).json({ message: "You cannot send from this mailbox." });
+      return;
+    }
+
+    const { mailAttachments, metadata } = getUploadedAttachments(req);
+    const forwardSubject = normalizeForwardSubject(payload.subject || email.subject);
+    const cleanMessage = payload.body.trim();
+    const content = `
+      ${formatParagraphs(cleanMessage)}
+      ${renderQuotedEmailBlock({
+        mode: "forward",
+        fromName: email.fromName,
+        fromEmail: email.fromEmail,
+        to: email.to || [],
+        cc: email.cc || [],
+        subject: email.subject,
+        sentAt: email.receivedAt,
+        html: email.html,
+        text: email.text || email.preview || "",
+      })}
+    `;
+
+    await sendEmail(payload.to, forwardSubject, content, {
+      cc: payload.cc,
+      bcc: payload.bcc,
+      fromEmail: payload.fromEmail || undefined,
+      title: forwardSubject,
+      preheader: cleanMessage.slice(0, 130),
+      signature: payload.signature,
+      attachments: mailAttachments,
+    });
+
+    const outbound = await OutboundEmail.create({
+      ...payload,
+      subject: forwardSubject,
+      folder: "sent",
+      status: "sent",
+      fromEmail: payload.fromEmail || undefined,
+      attachments: metadata,
+      sentAt: new Date(),
+      createdBy: getAdminName(req),
+      createdByEmail: getAdminEmail(req),
+      updatedBy: getAdminName(req),
+      updatedByEmail: getAdminEmail(req),
+    });
+
+    addEmailActivity(email, req, "replied", `Forwarded: ${forwardSubject}`);
+    await email.save();
+
+    res.status(200).json({ message: "Email forwarded", email: outbound });
+  } catch (error: any) {
+    res.status(500).json({
+      message: "Failed to forward email",
+      error: error?.message || "Unknown error",
+    });
+  }
+};
 export const updateEmailStatus = async (req: Request, res: Response): Promise<void> => {
   try {
     const status = String(req.body?.status || "");
@@ -830,7 +922,7 @@ export const updateEmailStatus = async (req: Request, res: Response): Promise<vo
 
     if (email.status !== status) {
       email.status = status as any;
-      addEmailActivity(email, req, "status", `Statut change en ${status}`);
+      addEmailActivity(email, req, "status", `Status changed to ${status}`);
       await email.save();
     }
 
