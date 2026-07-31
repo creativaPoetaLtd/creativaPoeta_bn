@@ -52,6 +52,7 @@ const allPermissionKeys = [
   "seo:manage",
   "jobs:manage",
   "users:manage",
+  "internal:messages",
   "reports:read",
 ] as const;
 
@@ -71,12 +72,13 @@ const permissionsByRole: Record<CreatableAdminRole | "super_admin", string[]> = 
     "email:send",
     "email:manage",
     "jobs:manage",
+    "internal:messages",
     "reports:read",
   ],
-  admin_2: ["dashboard:read", "requests:visibility", "email:read", "blogs:manage", "seo:manage", "reports:read"],
-  admin_3: ["dashboard:read", "requests:assistance", "contacts:read", "contacts:reply", "email:read", "email:send", "email:manage"],
-  admin_4: ["dashboard:read", "reports:read"],
-  admin_5: ["dashboard:read", "email:read"],
+  admin_2: ["dashboard:read", "requests:visibility", "email:read", "blogs:manage", "seo:manage", "internal:messages", "reports:read"],
+  admin_3: ["dashboard:read", "requests:assistance", "contacts:read", "contacts:reply", "email:read", "email:send", "email:manage", "internal:messages"],
+  admin_4: ["dashboard:read", "internal:messages", "reports:read"],
+  admin_5: ["dashboard:read", "email:read", "internal:messages"],
 };
 
 const PASSWORD_MIN_LENGTH = 8;

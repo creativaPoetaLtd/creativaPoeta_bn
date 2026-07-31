@@ -9,6 +9,7 @@ import { testEmail } from "../controllers/emailTestController";
 import visibilityAuditRouter from "./visibilityAuditRoutes";
 import emailRouter from "./emailRoutes";
 import adminNotificationRouter from "./adminNotificationRoutes";
+import internalMessageRouter from "./internalMessageRoutes";
 
 const router = express.Router();
 
@@ -19,6 +20,7 @@ router.use("/job", jobRouter);
 router.use("/contact", contactRouter);
 router.use("/emails", emailRouter);
 router.use("/admin-notifications", adminNotificationRouter);
+router.use("/internal-messages", internalMessageRouter);
 router.use("/jobs", CareerRouter);
 router.use("/visibility-audit", visibilityAuditRouter);
 
