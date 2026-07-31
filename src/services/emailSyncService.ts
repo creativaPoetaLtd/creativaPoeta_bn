@@ -31,11 +31,20 @@ const normalizeEnvKey = (value: string) =>
     .replace(/[^a-z0-9_]/gi, "_")
     .toUpperCase();
 
-const getExtraMailboxKeys = () =>
-  String(process.env.IMAP_EXTRA_KEYS || "")
+const getExtraMailboxKeys = () => {
+  const declaredKeys = String(process.env.IMAP_EXTRA_KEYS || "")
     .split(/[,;\n]/)
-    .map((item) => item.trim())
+    .map(normalizeEnvKey)
     .filter(Boolean);
+
+  const discoveredKeys = Object.keys(process.env)
+    .map((key) => key.match(/^IMAP_(.+)_(USER|ADDRESS|EMAIL)$/)?.[1])
+    .filter((key): key is string => Boolean(key))
+    .map(normalizeEnvKey)
+    .filter((key) => key !== "BE" && key !== "GLOBAL");
+
+  return Array.from(new Set([...declaredKeys, ...discoveredKeys]));
+};
 
 const getMailboxConfigs = (): MailboxConfig[] => {
   const baseConfigs = [
@@ -51,10 +60,9 @@ const getMailboxConfigs = (): MailboxConfig[] => {
     },
   ];
 
-  const extraConfigs = getExtraMailboxKeys().map((key) => {
-    const envKey = normalizeEnvKey(key);
+  const extraConfigs = getExtraMailboxKeys().map((envKey) => {
     return {
-      key: key.trim().toLowerCase(),
+      key: envKey.toLowerCase(),
       address:
         process.env[`IMAP_${envKey}_USER`] ||
         process.env[`IMAP_${envKey}_ADDRESS`] ||

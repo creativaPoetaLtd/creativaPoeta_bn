@@ -42,15 +42,19 @@ const normalizeEnvKey = (value = "") =>
     .replace(/[^A-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
 
-const getExtraMailboxKeys = () =>
-  Array.from(
-    new Set(
-      ["BE", "GLOBAL", process.env.SMTP_EXTRA_KEYS, process.env.IMAP_EXTRA_KEYS]
-        .flatMap((value) => String(value || "").split(/[\n,;]/))
-        .map(normalizeEnvKey)
-        .filter(Boolean)
-    )
-  );
+const getExtraMailboxKeys = () => {
+  const declaredKeys = ["BE", "GLOBAL", process.env.SMTP_EXTRA_KEYS, process.env.IMAP_EXTRA_KEYS]
+    .flatMap((value) => String(value || "").split(/[\n,;]/))
+    .map(normalizeEnvKey)
+    .filter(Boolean);
+
+  const discoveredKeys = Object.keys(process.env)
+    .map((key) => key.match(/^(SMTP|IMAP)_(.+)_(USER|ADDRESS|EMAIL)$/)?.[2])
+    .filter((key): key is string => Boolean(key))
+    .map(normalizeEnvKey);
+
+  return Array.from(new Set([...declaredKeys, ...discoveredKeys]));
+};
 
 const getMailboxSmtpConfigs = (): SmtpConfig[] => {
   const configs: SmtpConfig[] = [];
