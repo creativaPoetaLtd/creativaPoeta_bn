@@ -1,4 +1,4 @@
-﻿import mongoose, { Schema, Document } from "mongoose";
+import mongoose, { Schema, Document } from "mongoose";
 
 export type UserRole =
   | "super_admin"
@@ -33,6 +33,9 @@ export interface IUser extends Document {
   resetTokenHash?: string;
   resetTokenExpiresAt?: Date;
   mailboxAccess: IUserMailboxAccess[];
+  permissionsAllow: string[];
+  permissionsDeny: string[];
+  internalGroups: string[];
   createdAt: Date;
 }
 
@@ -84,6 +87,9 @@ const UserSchema: Schema = new Schema(
     resetTokenHash: { type: String },
     resetTokenExpiresAt: { type: Date },
     mailboxAccess: { type: [MailboxAccessSchema], default: [] },
+    permissionsAllow: { type: [String], default: [] },
+    permissionsDeny: { type: [String], default: [] },
+    internalGroups: { type: [String], default: [] },
   },
   { timestamps: true }
 );

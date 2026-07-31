@@ -180,12 +180,12 @@ export const superAdminOnly = (
   if (!req.user) {
     res
       .status(401)
-      .json({ message: "Access denied. Super admin authentication required." });
+      .json({ message: "Access denied. Authorized account required." });
     return;
   }
 
   if (getEffectiveAdminRole(req.user.role, req.user.email) !== "super_admin") {
-    res.status(403).json({ message: "Access denied. Super admin role required." });
+    res.status(403).json({ message: "Access denied. Authorized account required." });
     return;
   }
 

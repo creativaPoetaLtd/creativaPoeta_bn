@@ -1,4 +1,4 @@
-﻿import { Request, Response } from "express";
+import { Request, Response } from "express";
 import EmailMessage from "../models/EmailMessage";
 import OutboundEmail from "../models/OutboundEmail";
 import User from "../models/User";
@@ -382,10 +382,16 @@ export const getEmails = async (req: Request, res: Response): Promise<void> => {
       ]),
     ]);
 
+    const syncedMailboxes = mailboxRows.map((row: { _id?: string }) => row._id).filter(Boolean);
+    const allowedMailboxAddresses = await getAllowedMailboxAddresses(req);
+    const mailboxOptions = allowedMailboxAddresses
+      ? Array.from(new Set([...allowedMailboxAddresses, ...syncedMailboxes])).sort()
+      : syncedMailboxes;
+
     res.status(200).json({
       message: "Emails fetched successfully",
       emails,
-      mailboxes: mailboxRows.map((row: { _id?: string }) => row._id).filter(Boolean),
+      mailboxes: mailboxOptions,
       metrics: counts.reduce(
         (acc: Record<string, number>, item: { _id: string; count: number }) => {
           acc[item._id] = item.count;
@@ -808,22 +814,3 @@ export const deleteEmail = async (req: Request, res: Response): Promise<void> =>
     });
   }
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

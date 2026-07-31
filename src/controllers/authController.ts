@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import User, { IUser, IUserMailboxAccess } from "../models/User";
+import AdminNotification from "../models/AdminNotification";
 import { getEffectiveAdminRole, normalizeAdminRole } from "../middleware/authMiddleware";
 import dotenv from "dotenv";
 
@@ -37,14 +38,45 @@ const roleLabels: Record<CreatableAdminRole | "super_admin", string> = {
   admin_5: "Niveau 5 - Acces limite",
 };
 
+const allPermissionKeys = [
+  "dashboard:read",
+  "requests:projects",
+  "requests:visibility",
+  "requests:assistance",
+  "contacts:read",
+  "contacts:reply",
+  "email:read",
+  "email:send",
+  "email:manage",
+  "blogs:manage",
+  "seo:manage",
+  "jobs:manage",
+  "users:manage",
+  "reports:read",
+] as const;
+
+const permissionCatalog = new Set<string>(allPermissionKeys);
+
 const permissionsByRole: Record<CreatableAdminRole | "super_admin", string[]> = {
-  super_admin: ["all", "manage_admin_0"],
-  admin_0: ["all_except_admin_0_management"],
-  admin_1: ["requests:manage", "email:send", "email:read", "jobs:manage"],
-  admin_2: ["blogs:manage", "seo:manage", "email:read"],
-  admin_3: ["email:manage", "contacts:reply", "assistance:reply"],
+  super_admin: [...allPermissionKeys, "users:level0"],
+  admin_0: [...allPermissionKeys],
+  admin_1: [
+    "dashboard:read",
+    "requests:projects",
+    "requests:visibility",
+    "requests:assistance",
+    "contacts:read",
+    "contacts:reply",
+    "email:read",
+    "email:send",
+    "email:manage",
+    "jobs:manage",
+    "reports:read",
+  ],
+  admin_2: ["dashboard:read", "requests:visibility", "email:read", "blogs:manage", "seo:manage", "reports:read"],
+  admin_3: ["dashboard:read", "requests:assistance", "contacts:read", "contacts:reply", "email:read", "email:send", "email:manage"],
   admin_4: ["dashboard:read", "reports:read"],
-  admin_5: ["assigned:read", "assigned:reply"],
+  admin_5: ["dashboard:read", "email:read"],
 };
 
 const PASSWORD_MIN_LENGTH = 8;
@@ -68,6 +100,37 @@ const sanitizeMailboxAccess = (mailboxAccess: unknown, personalEmail: string): I
   return Array.from(byAddress.values());
 };
 
+const sanitizePermissionList = (value: unknown) => {
+  const rows = Array.isArray(value) ? value : [];
+  return Array.from(
+    new Set(
+      rows
+        .map((item) => String(item || "").trim())
+        .filter((item) => permissionCatalog.has(item))
+    )
+  );
+};
+
+const getRoleInternalGroups = (role: CreatableAdminRole | "super_admin") => {
+  if (role === "super_admin") return [];
+  const level = Number(role.replace("admin_", ""));
+  if (Number.isNaN(level)) return [];
+  const groups = [`level_${level}`];
+  for (let max = level; max <= 5; max += 1) {
+    groups.push(`levels_0_${max}`);
+  }
+  return groups;
+};
+
+const getEffectivePermissions = (user: IUser, role: CreatableAdminRole | "super_admin") => {
+  const base = new Set(permissionsByRole[role] || []);
+  (user.permissionsAllow || []).forEach((permission) => {
+    if (permissionCatalog.has(permission)) base.add(permission);
+  });
+  (user.permissionsDeny || []).forEach((permission) => base.delete(permission));
+  return Array.from(base);
+};
+
 const sanitizeUser = (user: IUser) => {
   const normalizedRole = getEffectiveAdminRole(user.role, user.email);
   const safeRole = normalizedRole === "admin" || normalizedRole === "editor" || normalizedRole === "viewer"
@@ -80,7 +143,10 @@ const sanitizeUser = (user: IUser) => {
     email: user.email,
     role: safeRole,
     roleLabel: roleLabels[safeRole as keyof typeof roleLabels] || safeRole,
-    permissions: permissionsByRole[safeRole as keyof typeof permissionsByRole] || [],
+    permissions: getEffectivePermissions(user, safeRole as CreatableAdminRole | "super_admin"),
+    permissionsAllow: user.permissionsAllow || [],
+    permissionsDeny: user.permissionsDeny || [],
+    internalGroups: Array.from(new Set([...(user.internalGroups || []), ...getRoleInternalGroups(safeRole as CreatableAdminRole | "super_admin")])),
     isActive: user.isActive,
     accountStatus: user.accountStatus || (user.password ? "active" : "pending"),
     mailboxAccess: user.mailboxAccess || [],
@@ -343,10 +409,16 @@ export const requestPasswordReset = async (req: Request, res: Response): Promise
     const user = await User.findOne({ email });
 
     if (user && user.isActive && user.accountStatus !== "disabled") {
-      const token = createPlainToken();
-      user.resetTokenHash = hashToken(token);
-      user.resetTokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
-      await user.save();
+      await AdminNotification.create({
+        type: "password_reset",
+        status: "new",
+        title: "Password reset request",
+        message: "An admin requested a new password link.",
+        targetUserId: user._id,
+        targetEmail: user.email,
+        targetName: user.name,
+        createdByEmail: user.email,
+      });
     }
 
     res.status(200).json({
@@ -430,6 +502,8 @@ export const createAdmin = async (req: Request, res: Response): Promise<void> =>
       isActive: true,
       accountStatus: "pending",
       mailboxAccess: sanitizeMailboxAccess(mailboxAccess, normalizedEmail),
+      permissionsAllow: sanitizePermissionList(req.body?.permissionsAllow),
+      permissionsDeny: sanitizePermissionList(req.body?.permissionsDeny),
     });
 
     await user.save();
@@ -446,7 +520,7 @@ export const createAdmin = async (req: Request, res: Response): Promise<void> =>
 export const updateAdmin = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { name, role, isActive, mailboxAccess } = req.body;
+    const { name, role, isActive, mailboxAccess, permissionsAllow, permissionsDeny } = req.body;
     const target = await User.findById(id);
 
     if (!target) {
@@ -480,6 +554,12 @@ export const updateAdmin = async (req: Request, res: Response): Promise<void> =>
     }
     if (mailboxAccess !== undefined) {
       target.mailboxAccess = sanitizeMailboxAccess(mailboxAccess, target.email) as any;
+    }
+    if (permissionsAllow !== undefined) {
+      target.permissionsAllow = sanitizePermissionList(permissionsAllow) as any;
+    }
+    if (permissionsDeny !== undefined) {
+      target.permissionsDeny = sanitizePermissionList(permissionsDeny) as any;
     }
 
     await target.save();
@@ -614,6 +694,3 @@ export const verifyToken = async (
     res.status(500).json({ error: (error as Error).message });
   }
 };
-
-
-
