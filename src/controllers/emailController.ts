@@ -39,6 +39,29 @@ const getAdminEmail = (req: Request) => String((req.user as any)?.email || "").t
 const isCpMailbox = (email = "") => /^[-a-z0-9._%+]+@creativapoeta\.(com|be)$/i.test(email.trim());
 const SHARED_MAILBOXES = ["contact@creativapoeta.com", "contact@creativapoeta.be"];
 
+const enrichEmailOwnerRoles = async (emails: any[]) => {
+  const rows = emails.map((email) =>
+    typeof email?.toObject === "function" ? email.toObject() : { ...email }
+  );
+  const ownerEmails = Array.from(
+    new Set(rows.map((email) => normalizeEmail(email.assignedToEmail)).filter(Boolean))
+  );
+
+  if (!ownerEmails.length) return rows;
+
+  const owners = await User.find({ email: { $in: ownerEmails } }).select("email role").lean();
+  const roleByEmail = new Map(
+    owners.map((owner: any) => [normalizeEmail(owner.email), owner.role])
+  );
+
+  return rows.map((email) => ({
+    ...email,
+    assignedToRole: roleByEmail.get(normalizeEmail(email.assignedToEmail)),
+  }));
+};
+
+const enrichEmailOwnerRole = async (email: any) => (await enrichEmailOwnerRoles([email]))[0];
+
 const canManageSharedMailboxes = (req: Request) =>
   ["super_admin", "admin_0"].includes(getEffectiveAdminRole((req.user as any)?.role, (req.user as any)?.email));
 
@@ -395,7 +418,7 @@ export const getEmails = async (req: Request, res: Response): Promise<void> => {
     const mailboxAccessFilter: any = {};
     await applyInboundMailboxAccess(req, mailboxAccessFilter);
     const [emails, totalEmails, counts, mailboxRows] = await Promise.all([
-      EmailMessage.find(filter).sort({ receivedAt: -1 }).skip(skip).limit(limit),
+      EmailMessage.find(filter).sort({ receivedAt: -1 }).skip(skip).limit(limit).lean(),
       EmailMessage.countDocuments(filter),
       EmailMessage.aggregate([{ $match: filter }, { $group: { _id: "$status", count: { $sum: 1 } } }]),
       EmailMessage.aggregate([
@@ -411,9 +434,11 @@ export const getEmails = async (req: Request, res: Response): Promise<void> => {
       ? Array.from(new Set([...allowedMailboxAddresses, ...syncedMailboxes])).sort()
       : syncedMailboxes;
 
+    const emailsWithOwnerRoles = await enrichEmailOwnerRoles(emails);
+
     res.status(200).json({
       message: "Emails fetched successfully",
-      emails,
+      emails: emailsWithOwnerRoles,
       mailboxes: mailboxOptions,
       metrics: counts.reduce(
         (acc: Record<string, number>, item: { _id: string; count: number }) => {
@@ -504,7 +529,7 @@ export const getEmail = async (req: Request, res: Response): Promise<void> => {
       await email.save();
     }
 
-    res.status(200).json({ message: "Email fetched successfully", email });
+    res.status(200).json({ message: "Email fetched successfully", email: await enrichEmailOwnerRole(email) });
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to fetch email",
@@ -536,7 +561,7 @@ export const claimEmail = async (req: Request, res: Response): Promise<void> => 
     assignEmailToCurrentUser(email, req);
     await email.save();
 
-    res.status(200).json({ message: "Email assigned", email });
+    res.status(200).json({ message: "Email assigned", email: await enrichEmailOwnerRole(email) });
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to assign email",
@@ -572,7 +597,7 @@ export const releaseEmail = async (req: Request, res: Response): Promise<void> =
     addEmailActivity(email, req, "released", `Ticket libere de ${previousOwner}`);
     await email.save();
 
-    res.status(200).json({ message: "Email released", email });
+    res.status(200).json({ message: "Email released", email: await enrichEmailOwnerRole(email) });
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to release email",
@@ -776,7 +801,7 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
     addEmailActivity(email, req, "replied", `Reponse envoyee: ${replySubject}`);
     await email.save();
 
-    res.status(200).json({ message: "Reply sent successfully", email });
+    res.status(200).json({ message: "Reply sent successfully", email: await enrichEmailOwnerRole(email) });
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to send email reply",
@@ -809,7 +834,7 @@ export const updateEmailStatus = async (req: Request, res: Response): Promise<vo
       await email.save();
     }
 
-    res.status(200).json({ message: "Email status updated", email });
+    res.status(200).json({ message: "Email status updated", email: await enrichEmailOwnerRole(email) });
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to update email status",
