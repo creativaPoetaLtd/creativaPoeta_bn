@@ -37,32 +37,56 @@ const getAdminName = (req: Request) =>
   (req.user as any)?.name || (req.user as any)?.email || "Admin";
 const getAdminEmail = (req: Request) => String((req.user as any)?.email || "").toLowerCase().trim();
 const isCpMailbox = (email = "") => /^[-a-z0-9._%+]+@creativapoeta\.(com|be)$/i.test(email.trim());
+const SHARED_MAILBOXES = ["contact@creativapoeta.com", "contact@creativapoeta.be"];
 
-const canSeeAllMailboxes = (req: Request) =>
+const canManageSharedMailboxes = (req: Request) =>
   ["super_admin", "admin_0"].includes(getEffectiveAdminRole((req.user as any)?.role, (req.user as any)?.email));
 
 const getAllowedMailboxAddresses = async (req: Request) => {
-  if (canSeeAllMailboxes(req)) return null;
-
   const currentEmail = getAdminEmail(req);
   const currentUserId = (req.user as any)?._id || (req.user as any)?.id;
   const user = currentUserId
     ? await User.findById(currentUserId).select("email mailboxAccess role isActive accountStatus")
     : await User.findOne({ email: currentEmail }).select("email mailboxAccess role isActive accountStatus");
+  const personalMailboxRows = await User.find({}).select("email").lean();
+  const reservedPersonalMailboxes = new Set(
+    personalMailboxRows
+      .map((row) => normalizeEmail(row.email))
+      .filter((address) => address && address !== currentEmail)
+  );
   const addresses = new Set<string>();
 
   if (currentEmail) addresses.add(currentEmail);
   if (user?.email) addresses.add(String(user.email).toLowerCase().trim());
+
   (user?.mailboxAccess || []).forEach((mailbox) => {
-    if (mailbox.address) addresses.add(String(mailbox.address).toLowerCase().trim());
+    const address = String(mailbox.address || "").toLowerCase().trim();
+    if (!address) return;
+    if (mailbox.type === "personal" && address !== currentEmail) return;
+    if (reservedPersonalMailboxes.has(address)) return;
+    addresses.add(address);
   });
+
+  if (canManageSharedMailboxes(req)) {
+    SHARED_MAILBOXES.forEach((address) => addresses.add(address));
+    const sharedRows = await User.find({ "mailboxAccess.type": "shared" })
+      .select("mailboxAccess")
+      .lean();
+    sharedRows.forEach((row) => {
+      (row.mailboxAccess || []).forEach((mailbox: any) => {
+        if (mailbox.type === "shared" && mailbox.address) {
+          const address = String(mailbox.address).toLowerCase().trim();
+          if (!reservedPersonalMailboxes.has(address)) addresses.add(address);
+        }
+      });
+    });
+  }
 
   return Array.from(addresses).filter(Boolean);
 };
 
 const applyInboundMailboxAccess = async (req: Request, filter: any) => {
   const allowedAddresses = await getAllowedMailboxAddresses(req);
-  if (!allowedAddresses) return;
   filter.$and = [
     ...(filter.$and || []),
     {
@@ -72,7 +96,6 @@ const applyInboundMailboxAccess = async (req: Request, filter: any) => {
 };
 
 const applyOutboundOwnerAccess = (req: Request, filter: any) => {
-  if (canSeeAllMailboxes(req)) return;
   filter.createdByEmail = getAdminEmail(req);
 };
 
@@ -95,7 +118,7 @@ const assignEmailToCurrentUser = (email: any, req: Request, message = "Ticket pr
 };
 
 const canModifyEmailAssignment = (req: Request, email: any) =>
-  canSeeAllMailboxes(req) || !email.assignedToEmail || email.assignedToEmail === getAdminEmail(req);
+  canManageSharedMailboxes(req) || !email.assignedToEmail || email.assignedToEmail === getAdminEmail(req);
 const getAdminNotificationEmail = () =>
   process.env.ADMIN_NOTIFICATION_EMAIL ||
   process.env.ADMIN_EMAIL ||
@@ -612,7 +635,7 @@ export const sendComposedEmail = async (req: Request, res: Response): Promise<vo
     const draftId = String(req.body?.draftId || "").trim();
 
     const email = draftId
-      ? await OutboundEmail.findOneAndUpdate({ _id: draftId, ...(canSeeAllMailboxes(req) ? {} : { createdByEmail: getAdminEmail(req) }) }, sentPayload, { new: true })
+      ? await OutboundEmail.findOneAndUpdate({ _id: draftId, createdByEmail: getAdminEmail(req) }, sentPayload, { new: true })
       : await OutboundEmail.create({ ...sentPayload, createdBy: getAdminName(req), createdByEmail: getAdminEmail(req) });
 
     res.status(200).json({ message: "Email sent", email });

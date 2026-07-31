@@ -25,6 +25,91 @@ interface SendEmailOptions {
 }
 
 const isConfigured = (value?: string) => Boolean(value && value.trim());
+interface SmtpConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  pass: string;
+  fromEmail?: string;
+  fromName?: string;
+}
+
+const normalizeEnvKey = (value = "") =>
+  value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+const getExtraMailboxKeys = () =>
+  Array.from(
+    new Set(
+      ["BE", "GLOBAL", process.env.SMTP_EXTRA_KEYS, process.env.IMAP_EXTRA_KEYS]
+        .flatMap((value) => String(value || "").split(/[\n,;]/))
+        .map(normalizeEnvKey)
+        .filter(Boolean)
+    )
+  );
+
+const getMailboxSmtpConfigs = (): SmtpConfig[] => {
+  const configs: SmtpConfig[] = [];
+  const baseHost = process.env.SMTP_HOST || "";
+  const basePort = Number(process.env.SMTP_PORT || 465);
+  const baseSecure = process.env.SMTP_SECURE !== "false";
+
+  if (isConfigured(baseHost) && isConfigured(process.env.SMTP_USER) && isConfigured(process.env.SMTP_PASSWORD)) {
+    configs.push({
+      host: baseHost,
+      port: basePort,
+      secure: baseSecure,
+      user: process.env.SMTP_USER as string,
+      pass: process.env.SMTP_PASSWORD as string,
+      fromEmail: process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER,
+      fromName: process.env.SMTP_FROM_NAME,
+    });
+  }
+
+  getExtraMailboxKeys().forEach((key) => {
+    const user =
+      process.env[`SMTP_${key}_USER`] ||
+      process.env[`SMTP_${key}_ADDRESS`] ||
+      process.env[`SMTP_${key}_EMAIL`] ||
+      process.env[`IMAP_${key}_USER`] ||
+      process.env[`IMAP_${key}_ADDRESS`] ||
+      process.env[`IMAP_${key}_EMAIL`];
+    const pass = process.env[`SMTP_${key}_PASSWORD`] || process.env[`IMAP_${key}_PASSWORD`];
+    const host = process.env[`SMTP_${key}_HOST`] || baseHost;
+
+    if (!isConfigured(host) || !isConfigured(user) || !isConfigured(pass)) return;
+
+    configs.push({
+      host,
+      port: Number(process.env[`SMTP_${key}_PORT`] || basePort),
+      secure: process.env[`SMTP_${key}_SECURE`] ? process.env[`SMTP_${key}_SECURE`] !== "false" : baseSecure,
+      user: user as string,
+      pass: pass as string,
+      fromEmail: process.env[`SMTP_${key}_FROM_EMAIL`] || user,
+      fromName: process.env[`SMTP_${key}_FROM_NAME`],
+    });
+  });
+
+  return configs;
+};
+
+const resolveSmtpConfig = (fromEmail?: string): SmtpConfig | undefined => {
+  const configs = getMailboxSmtpConfigs();
+  const normalizedFrom = String(fromEmail || "").toLowerCase().trim();
+  if (normalizedFrom) {
+    const matchingConfig = configs.find((config) =>
+      [config.user, config.fromEmail]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().trim() === normalizedFrom)
+    );
+    return matchingConfig;
+  }
+  return configs[0];
+};
 
 const stripHtml = (html = "") =>
   html
@@ -45,24 +130,25 @@ const sendEmail = async (
       ? { attachments: attachmentsOrOptions }
       : attachmentsOrOptions || {};
 
-    const hasSmtpConfig =
-      isConfigured(process.env.SMTP_HOST) &&
-      isConfigured(process.env.SMTP_USER) &&
-      isConfigured(process.env.SMTP_PASSWORD);
+    const smtpConfig = resolveSmtpConfig(options.fromEmail);
     const hasGmailFallback = isConfigured(process.env.EMAIL_USER) && isConfigured(process.env.EMAIL_PASS);
 
-    if (!hasSmtpConfig && !hasGmailFallback) {
-      throw new Error("Email credentials not configured. Add SMTP_* variables or EMAIL_USER/EMAIL_PASS.");
+    if (options.fromEmail && !smtpConfig) {
+      throw new Error("Sender mailbox credentials are not configured.");
     }
 
-    const transporter = hasSmtpConfig
+    if (!smtpConfig && !hasGmailFallback) {
+      throw new Error("Email credentials not configured. Add SMTP variables or EMAIL_USER/EMAIL_PASS.");
+    }
+
+    const transporter = smtpConfig
       ? nodemailer.createTransport({
-          host: process.env.SMTP_HOST,
-          port: Number(process.env.SMTP_PORT || 465),
-          secure: process.env.SMTP_SECURE !== "false",
+          host: smtpConfig.host,
+          port: smtpConfig.port,
+          secure: smtpConfig.secure,
           auth: {
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASSWORD,
+            user: smtpConfig.user,
+            pass: smtpConfig.pass,
           },
           pool: true,
           maxConnections: 5,
@@ -88,10 +174,12 @@ const sendEmail = async (
     const defaultFromEmail =
       process.env.SMTP_FROM_EMAIL ||
       process.env.EMAIL_FROM ||
+      smtpConfig?.fromEmail ||
+      smtpConfig?.user ||
       process.env.SMTP_USER ||
       process.env.EMAIL_USER;
     const fromEmail = options.fromEmail || defaultFromEmail;
-    const fromName = options.fromName || process.env.SMTP_FROM_NAME || "Creativa Poeta";
+    const fromName = options.fromName || smtpConfig?.fromName || process.env.SMTP_FROM_NAME || "Creativa Poeta";
     const html =
       options.wrap === false
         ? htmlContent

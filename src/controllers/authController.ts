@@ -102,6 +102,34 @@ const sanitizeMailboxAccess = (mailboxAccess: unknown, personalEmail: string): I
   return Array.from(byAddress.values());
 };
 
+
+const sanitizeAssignableMailboxAccess = async (
+  mailboxAccess: unknown,
+  personalEmail: string
+): Promise<IUserMailboxAccess[]> => {
+  const normalizedPersonalEmail = normalizeEmail(personalEmail);
+  const reservedPersonalMailboxes = new Set(
+    (
+      await User.find({ email: { $ne: normalizedPersonalEmail } })
+        .select("email")
+        .lean()
+    )
+      .map((user) => normalizeEmail(user.email))
+      .filter(Boolean)
+  );
+
+  const rows = sanitizeMailboxAccess(mailboxAccess, normalizedPersonalEmail).filter((mailbox) => {
+    if (mailbox.address === normalizedPersonalEmail) return true;
+    if (mailbox.type === "personal") return false;
+    return !reservedPersonalMailboxes.has(mailbox.address);
+  });
+
+  return rows.map((mailbox) =>
+    mailbox.address === normalizedPersonalEmail
+      ? { ...mailbox, permission: "manage", type: "personal" }
+      : { ...mailbox, type: "shared" }
+  );
+};
 const sanitizePermissionList = (value: unknown) => {
   const rows = Array.isArray(value) ? value : [];
   return Array.from(
@@ -503,7 +531,7 @@ export const createAdmin = async (req: Request, res: Response): Promise<void> =>
       role: nextRole,
       isActive: true,
       accountStatus: "pending",
-      mailboxAccess: sanitizeMailboxAccess(mailboxAccess, normalizedEmail),
+      mailboxAccess: await sanitizeAssignableMailboxAccess(mailboxAccess, normalizedEmail),
       permissionsAllow: sanitizePermissionList(req.body?.permissionsAllow),
       permissionsDeny: sanitizePermissionList(req.body?.permissionsDeny),
     });
@@ -555,7 +583,7 @@ export const updateAdmin = async (req: Request, res: Response): Promise<void> =>
       target.accountStatus = isActive ? (target.password ? "active" : "pending") : "disabled";
     }
     if (mailboxAccess !== undefined) {
-      target.mailboxAccess = sanitizeMailboxAccess(mailboxAccess, target.email) as any;
+      target.mailboxAccess = await sanitizeAssignableMailboxAccess(mailboxAccess, target.email) as any;
     }
     if (permissionsAllow !== undefined) {
       target.permissionsAllow = sanitizePermissionList(permissionsAllow) as any;
