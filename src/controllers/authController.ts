@@ -29,13 +29,13 @@ const allowedRoles = [
 type CreatableAdminRole = (typeof allowedRoles)[number];
 
 const roleLabels: Record<CreatableAdminRole | "super_admin", string> = {
-  super_admin: "Niveau 0 - Direction",
-  admin_0: "Niveau 0 - Direction",
-  admin_1: "Niveau 1 - Operations",
-  admin_2: "Niveau 2 - Contenu & SEO",
-  admin_3: "Niveau 3 - Support & email",
-  admin_4: "Niveau 4 - Lecture & reporting",
-  admin_5: "Niveau 5 - Acces limite",
+  super_admin: "Admin",
+  admin_0: "Level 0 - Direction",
+  admin_1: "Level 1 - Operations",
+  admin_2: "Level 2 - Content & SEO",
+  admin_3: "Level 3 - Support & Email",
+  admin_4: "Level 4 - Reporting",
+  admin_5: "Level 5 - Limited Access",
 };
 
 const allPermissionKeys = [
@@ -141,15 +141,44 @@ const sanitizePermissionList = (value: unknown) => {
   );
 };
 
+const cpgGroupKeys = [
+  "CPG0",
+  "CPG1",
+  "CPG2",
+  "CPG3",
+  "CPG4",
+  "CPG5",
+  "CPG01",
+  "CPG02",
+  "CPG03",
+  "CPG04",
+  "CPG05",
+  "CPG12",
+  "CPG13",
+  "CPG14",
+  "CPG15",
+  "CPG23",
+  "CPG24",
+  "CPG25",
+  "CPG34",
+  "CPG35",
+  "CPG45",
+];
+
+const getCpgGroupLevels = (groupKey: string) => {
+  const digits = groupKey.replace("CPG", "");
+  if (digits.length === 1) return [Number(digits)];
+  const start = Number(digits[0]);
+  const end = Number(digits[1]);
+  if (Number.isNaN(start) || Number.isNaN(end) || start > end) return [];
+  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+};
+
 const getRoleInternalGroups = (role: CreatableAdminRole | "super_admin") => {
   if (role === "super_admin") return [];
   const level = Number(role.replace("admin_", ""));
   if (Number.isNaN(level)) return [];
-  const groups = [`level_${level}`];
-  for (let max = level; max <= 5; max += 1) {
-    groups.push(`levels_0_${max}`);
-  }
-  return groups;
+  return cpgGroupKeys.filter((groupKey) => getCpgGroupLevels(groupKey).includes(level));
 };
 
 const getEffectivePermissions = (user: IUser, role: CreatableAdminRole | "super_admin") => {
@@ -176,7 +205,7 @@ const sanitizeUser = (user: IUser) => {
     permissions: getEffectivePermissions(user, safeRole as CreatableAdminRole | "super_admin"),
     permissionsAllow: user.permissionsAllow || [],
     permissionsDeny: user.permissionsDeny || [],
-    internalGroups: Array.from(new Set([...(user.internalGroups || []), ...getRoleInternalGroups(safeRole as CreatableAdminRole | "super_admin")])),
+    internalGroups: Array.from(new Set([...(user.internalGroups || []), ...getRoleInternalGroups(safeRole as CreatableAdminRole | "super_admin")])).filter((group) => cpgGroupKeys.includes(group)),
     isActive: user.isActive,
     accountStatus: user.accountStatus || (user.password ? "active" : "pending"),
     mailboxAccess: user.mailboxAccess || [],
