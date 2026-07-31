@@ -202,7 +202,7 @@ const sendEmail = async (
       subject,
       html,
       text: stripHtml(htmlContent),
-      replyTo: options.replyTo || process.env.REPLY_TO_EMAIL || fromEmail,
+      replyTo: options.replyTo || (options.fromEmail ? fromEmail : process.env.REPLY_TO_EMAIL || fromEmail),
       attachments: options.attachments,
     });
 
@@ -229,3 +229,4 @@ const sendEmail = async (
 };
 
 export default sendEmail;
+

@@ -41,6 +41,25 @@ const getAdminName = (req: Request) =>
 const getAdminEmail = (req: Request) => String((req.user as any)?.email || "").toLowerCase().trim();
 const isCpMailbox = (email = "") => /^[-a-z0-9._%+]+@creativapoeta\.(com|be)$/i.test(email.trim());
 const SHARED_MAILBOXES = ["contact@creativapoeta.com", "contact@creativapoeta.be"];
+const SHARED_SENDER_MAILBOXES = new Set([
+  ...SHARED_MAILBOXES,
+  "info@creativapoeta.com",
+  "info@creativapoeta.be",
+  "noreply@creativapoeta.com",
+  "noreply@creativapoeta.be",
+]);
+
+const getSenderDisplayName = (req: Request, fromEmail?: string) => {
+  const sender = normalizeEmail(fromEmail);
+  if (!sender || SHARED_SENDER_MAILBOXES.has(sender)) return "Creativa Poeta";
+
+  const adminName = String(getAdminName(req) || "").trim();
+  if (!adminName || adminName.toLowerCase() === sender || adminName.toLowerCase() === "admin") {
+    return "Creativa Poeta Team";
+  }
+
+  return `${adminName} from Creativa Poeta`;
+};
 
 const enrichEmailOwnerRoles = async (emails: any[]) => {
   const rows = emails.map((email) =>
@@ -276,6 +295,8 @@ const sendOutboundPayload = async (
     cc: payload.cc,
     bcc: payload.bcc,
     fromEmail: payload.fromEmail || undefined,
+    fromName: getSenderDisplayName(req, payload.fromEmail),
+    replyTo: payload.fromEmail || undefined,
     title: payload.subject,
     preheader: payload.body.slice(0, 130),
     signature: payload.signature,
@@ -787,6 +808,8 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
 
     await sendEmail(email.fromEmail, replySubject, content, {
       fromEmail: replyFromEmail,
+      fromName: getSenderDisplayName(req, replyFromEmail),
+      replyTo: replyFromEmail,
       title: replySubject,
       preheader: cleanMessage.slice(0, 130),
       signature: String(signature || "").trim(),
@@ -871,6 +894,8 @@ export const forwardEmail = async (req: Request, res: Response): Promise<void> =
       cc: payload.cc,
       bcc: payload.bcc,
       fromEmail: payload.fromEmail || undefined,
+      fromName: getSenderDisplayName(req, payload.fromEmail),
+      replyTo: payload.fromEmail || undefined,
       title: forwardSubject,
       preheader: cleanMessage.slice(0, 130),
       signature: payload.signature,
@@ -954,3 +979,4 @@ export const deleteEmail = async (req: Request, res: Response): Promise<void> =>
     });
   }
 };
+
