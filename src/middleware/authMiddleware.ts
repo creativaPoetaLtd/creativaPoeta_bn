@@ -98,9 +98,7 @@ export const authenticateUser = (
     req.user = { ...decoded, role: getEffectiveAdminRole(decoded.role, decoded.email) };
     next();
   } catch (err: any) {
-    console.error("Token verification error:", err.message);
-    console.error("Token:", token.substring(0, 50) + "...");
-    console.error("JWT_SECRET length:", JWT_SECRET ? JWT_SECRET.length : 0);
+    console.warn("Admin token verification failed:", err?.name || "unknown_error");
 
     if (err.name === "JsonWebTokenError") {
       res

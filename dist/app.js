@@ -7,6 +7,8 @@ const express_1 = __importDefault(require("express"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const cors_1 = __importDefault(require("cors"));
 const routes_1 = __importDefault(require("./routes"));
+const errorHandler_1 = __importDefault(require("./middleware/errorHandler"));
+const analyticsServerMiddleware_1 = require("./middleware/analyticsServerMiddleware");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 // Allow all CORS requests - no restrictions
@@ -16,10 +18,15 @@ app.use((0, cors_1.default)({
     allowedHeaders: "*", // Allow all headers
     credentials: false, // Set to false when using origin: "*"
 }));
+app.use(analyticsServerMiddleware_1.analyticsServerMiddleware);
 app.use(express_1.default.json());
 app.get("/", (req, res) => {
     res.setHeader("X-CP-Commit", process.env.VERCEL_GIT_COMMIT_SHA || "local");
     res.send("Creativa Poeta Backend is running ✅");
 });
 app.use("/api", routes_1.default);
+app.use((_req, res) => {
+    res.status(404).json({ message: "Route not found." });
+});
+app.use(errorHandler_1.default);
 exports.default = app;

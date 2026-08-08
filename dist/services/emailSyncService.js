@@ -8,6 +8,7 @@ const imapflow_1 = require("imapflow");
 const mailparser_1 = require("mailparser");
 const EmailMessage_1 = __importDefault(require("../models/EmailMessage"));
 const emailFilters_1 = require("../utils/emailFilters");
+const analyticsServerMetricService_1 = require("./analyticsServerMetricService");
 const normalizeEnvKey = (value) => value
     .trim()
     .replace(/[^a-z0-9_]/gi, "_")
@@ -181,6 +182,21 @@ const syncFolder = async (client, config, folder, limit, result) => {
             else {
                 await EmailMessage_1.default.create(payload);
                 result.imported += 1;
+                if (isSpam) {
+                    const folderClassified = String(folder.specialUse || "").toLowerCase() === "\\junk" ||
+                        /(^|[\/._ -])(spam|junk|promotions?)([\/._ -]|$)/i.test(folder.path);
+                    void (0, analyticsServerMetricService_1.recordServerMetric)({
+                        metricType: "spam_blocked",
+                        route: "mailbox_sync",
+                        method: "SYNC",
+                        outcome: "filtered",
+                        category: (0, emailFilters_1.isDmarcReport)(spamInput)
+                            ? "dmarc_report"
+                            : folderClassified
+                                ? "mailbox_folder"
+                                : "content_rule",
+                    });
+                }
             }
         }
         catch {

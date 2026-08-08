@@ -3,14 +3,14 @@ import app from "./app";
 
 const MONGO_URI = process.env.MONGO_URI || "";
 
-if (!MONGO_URI) {
-  throw new Error("MONGO_URI environment variable is required");
-}
-
 let isConnected = false;
 
 async function connectDB() {
   if (isConnected) return;
+  if (!MONGO_URI) {
+    console.error("MONGO_URI environment variable is required for database-backed endpoints");
+    return;
+  }
 
   try {
     const db = await mongoose.connect(MONGO_URI, {
@@ -24,6 +24,9 @@ async function connectDB() {
 }
 
 export default async function handler(req: any, res: any) {
-  await connectDB();
+  const requestPath = String(req.url || "").split("?")[0];
+  if (requestPath !== "/api/health/live") {
+    await connectDB();
+  }
   return app(req, res);
 }

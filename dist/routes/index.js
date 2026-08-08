@@ -17,6 +17,7 @@ const adminNotificationRoutes_1 = __importDefault(require("./adminNotificationRo
 const internalMessageRoutes_1 = __importDefault(require("./internalMessageRoutes"));
 const partnershipRequestRoutes_1 = __importDefault(require("./partnershipRequestRoutes"));
 const analyticsRoutes_1 = __importDefault(require("./analyticsRoutes"));
+const healthRoutes_1 = __importDefault(require("./healthRoutes"));
 const router = express_1.default.Router();
 router.use("/auth", authRoutes_1.default);
 router.use("/blogs", BlogRoutes_1.default);
@@ -30,6 +31,7 @@ router.use("/jobs", CareerRoute_1.default);
 router.use("/visibility-audit", visibilityAuditRoutes_1.default);
 router.use("/partnership-requests", partnershipRequestRoutes_1.default);
 router.use("/analytics", analyticsRoutes_1.default);
+router.use("/health", healthRoutes_1.default);
 // Email test endpoint for debugging
 router.get("/test-email", emailTestController_1.testEmail);
 exports.default = router;

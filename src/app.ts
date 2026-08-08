@@ -2,6 +2,8 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import routes from "./routes";
+import errorHandler from "./middleware/errorHandler";
+import { analyticsServerMiddleware } from "./middleware/analyticsServerMiddleware";
 
 dotenv.config();
 
@@ -17,6 +19,7 @@ app.use(
   })
 );
 
+app.use(analyticsServerMiddleware);
 app.use(express.json());
 
 app.get("/", (req, res) => {
@@ -25,5 +28,11 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api", routes);
+
+app.use((_req, res) => {
+  res.status(404).json({ message: "Route not found." });
+});
+
+app.use(errorHandler);
 
 export default app;
