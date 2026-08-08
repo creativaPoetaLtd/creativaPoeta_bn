@@ -7,6 +7,7 @@ import {
   isSpamMessage,
   spamMessageMongoFilter,
 } from "../utils/emailFilters";
+import { recordServerMetric } from "./analyticsServerMetricService";
 
 interface MailboxConfig {
   key: string;
@@ -244,6 +245,22 @@ const syncFolder = async (
       } else {
         await EmailMessage.create(payload);
         result.imported += 1;
+        if (isSpam) {
+          const folderClassified =
+            String(folder.specialUse || "").toLowerCase() === "\\junk" ||
+            /(^|[\/._ -])(spam|junk|promotions?)([\/._ -]|$)/i.test(folder.path);
+          void recordServerMetric({
+            metricType: "spam_blocked",
+            route: "mailbox_sync",
+            method: "SYNC",
+            outcome: "filtered",
+            category: isDmarcReport(spamInput)
+              ? "dmarc_report"
+              : folderClassified
+                ? "mailbox_folder"
+                : "content_rule",
+          });
+        }
       }
     } catch {
       result.skipped += 1;

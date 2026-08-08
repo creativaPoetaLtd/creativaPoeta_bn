@@ -67,6 +67,8 @@ const AnalyticsSessionSchema = new mongoose_1.Schema({
 }, { versionKey: false });
 AnalyticsSessionSchema.index({ sessionId: 1 }, { unique: true });
 AnalyticsSessionSchema.index({ visitorId: 1, startedAt: -1 });
+AnalyticsSessionSchema.index({ startedAt: -1, isBot: 1 });
 AnalyticsSessionSchema.index({ lastSeenAt: -1 });
+AnalyticsSessionSchema.index({ lastSeenAt: -1, isBot: 1 });
 AnalyticsSessionSchema.index({ lastSeenAt: 1 }, { expireAfterSeconds: retentionSeconds });
 exports.default = mongoose_1.default.model("AnalyticsSession", AnalyticsSessionSchema);
