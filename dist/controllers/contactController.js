@@ -1,22 +1,32 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteQuery = exports.updateQueryStatus = exports.replyToQuery = exports.getQuery = exports.getAllQueries = exports.sendContactDetails = void 0;
+exports.deleteQuery = exports.releaseQuery = exports.claimQuery = exports.updateQueryStatus = exports.replyToQuery = exports.getQuery = exports.getAllQueries = exports.getContactSummary = exports.sendContactDetails = void 0;
 const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
 const Query_1 = __importDefault(require("../models/Query"));
+const getAdminEmail = (req) => { var _a; return String(((_a = req.user) === null || _a === void 0 ? void 0 : _a.email) || "").toLowerCase().trim(); };
+const getAdminName = (req) => { var _a, _b; return String(((_a = req.user) === null || _a === void 0 ? void 0 : _a.name) || ((_b = req.user) === null || _b === void 0 ? void 0 : _b.email) || "Admin").trim(); };
+const addContactActivity = (query, req, type, message) => {
+    query.activity = query.activity || [];
+    query.activity.push({
+        type,
+        message,
+        actorEmail: getAdminEmail(req),
+        actorName: getAdminName(req),
+        at: new Date(),
+    });
+};
+const assignContactToCurrentUser = (query, req, message = "Ticket pris en charge") => {
+    query.assignedToEmail = getAdminEmail(req);
+    query.assignedToName = getAdminName(req);
+    query.assignedAt = new Date();
+    addContactActivity(query, req, "assigned", message);
+};
+const canModifyContactAssignment = (req, query) => !query.assignedToEmail || query.assignedToEmail === getAdminEmail(req);
 // Submit contact form (public endpoint)
-const sendContactDetails = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+const sendContactDetails = async (req, res, next) => {
     try {
         const { fullName, email, message } = req.body;
         if (!fullName || !email || !message) {
@@ -31,7 +41,7 @@ const sendContactDetails = (req, res, next) => __awaiter(void 0, void 0, void 0,
             status: "pending",
             isReplied: false,
         });
-        const savedQuery = yield newQuery.save();
+        const savedQuery = await newQuery.save();
         // Send email notification
         let emailSent = false;
         try {
@@ -45,7 +55,7 @@ const sendContactDetails = (req, res, next) => __awaiter(void 0, void 0, void 0,
             `;
             const recipientEmail = process.env.EMAIL_USER;
             if (recipientEmail) {
-                yield (0, sendEmail_1.default)(recipientEmail, "New Contact Form Submission", htmlContent);
+                await (0, sendEmail_1.default)(recipientEmail, "New Contact Form Submission", htmlContent);
                 emailSent = true;
             }
         }
@@ -63,10 +73,24 @@ const sendContactDetails = (req, res, next) => __awaiter(void 0, void 0, void 0,
     catch (error) {
         next(error);
     }
-});
+};
 exports.sendContactDetails = sendContactDetails;
+const getContactSummary = async (req, res) => {
+    try {
+        const currentEmail = getAdminEmail(req);
+        const [pending, assignedToMe] = await Promise.all([
+            Query_1.default.countDocuments({ status: "pending" }),
+            Query_1.default.countDocuments({ assignedToEmail: currentEmail, status: { $ne: "closed" } }),
+        ]);
+        res.status(200).json({ metrics: { pending, assignedToMe, attention: pending + assignedToMe } });
+    }
+    catch (error) {
+        res.status(500).json({ message: "Failed to fetch contact summary" });
+    }
+};
+exports.getContactSummary = getContactSummary;
 // Get all contact queries (admin only)
-const getAllQueries = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+const getAllQueries = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
@@ -78,11 +102,11 @@ const getAllQueries = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         }
         // Get queries with pagination
         const skip = (page - 1) * limit;
-        const queries = yield Query_1.default.find(filter)
+        const queries = await Query_1.default.find(filter)
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit);
-        const totalQueries = yield Query_1.default.countDocuments(filter);
+        const totalQueries = await Query_1.default.countDocuments(filter);
         const totalPages = Math.ceil(totalQueries / limit);
         res.status(200).json({
             message: "Queries fetched successfully",
@@ -98,17 +122,19 @@ const getAllQueries = (req, res) => __awaiter(void 0, void 0, void 0, function* 
     catch (error) {
         res.status(500).json({ message: "Failed to fetch queries" });
     }
-});
+};
 exports.getAllQueries = getAllQueries;
 // Get single contact query (admin only)
-const getQuery = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+const getQuery = async (req, res) => {
     try {
         const { id } = req.params;
-        const query = yield Query_1.default.findById(id);
+        const query = await Query_1.default.findById(id);
         if (!query) {
             res.status(404).json({ message: "Query not found" });
             return;
         }
+        addContactActivity(query, req, "opened", "Ticket ouvert");
+        await query.save();
         res.status(200).json({
             message: "Query fetched successfully",
             query,
@@ -117,10 +143,10 @@ const getQuery = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     catch (error) {
         res.status(500).json({ message: "Failed to fetch query" });
     }
-});
+};
 exports.getQuery = getQuery;
 // Reply to contact query (admin only)
-const replyToQuery = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+const replyToQuery = async (req, res) => {
     var _a;
     try {
         const { id } = req.params;
@@ -130,10 +156,16 @@ const replyToQuery = (req, res) => __awaiter(void 0, void 0, void 0, function* (
             res.status(400).json({ message: "Reply message is required" });
             return;
         }
-        const query = yield Query_1.default.findById(id);
+        const query = await Query_1.default.findById(id);
         if (!query) {
             res.status(404).json({ message: "Query not found" });
             return;
+        }
+        if (!query.assignedToEmail) {
+            assignContactToCurrentUser(query, req, "Ticket pris en charge pendant la reponse");
+        }
+        else if (query.assignedToEmail !== getAdminEmail(req)) {
+            addContactActivity(query, req, "replied", `Reponse envoyee alors que le ticket etait assigne a ${query.assignedToName || query.assignedToEmail}`);
         }
         // Update query with reply
         query.replyMessage = replyMessage;
@@ -141,7 +173,8 @@ const replyToQuery = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         query.repliedAt = new Date();
         query.repliedBy = userEmail;
         query.status = "replied";
-        yield query.save();
+        addContactActivity(query, req, "replied", `Reponse envoyee: ${subject || "Contact"}`);
+        await query.save();
         // Send reply email
         let emailSent = false;
         try {
@@ -161,7 +194,7 @@ const replyToQuery = (req, res) => __awaiter(void 0, void 0, void 0, function* (
                 <p><strong>Your Message:</strong> ${query.message}</p>
                 <p><strong>Submitted:</strong> ${query.createdAt}</p>
             `;
-            yield (0, sendEmail_1.default)(query.email, emailSubject, htmlContent);
+            await (0, sendEmail_1.default)(query.email, emailSubject, htmlContent);
             emailSent = true;
         }
         catch (emailError) {
@@ -177,10 +210,10 @@ const replyToQuery = (req, res) => __awaiter(void 0, void 0, void 0, function* (
     catch (error) {
         res.status(500).json({ message: "Failed to send reply" });
     }
-});
+};
 exports.replyToQuery = replyToQuery;
 // Update query status (admin only)
-const updateQueryStatus = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+const updateQueryStatus = async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
@@ -188,10 +221,15 @@ const updateQueryStatus = (req, res) => __awaiter(void 0, void 0, void 0, functi
             res.status(400).json({ message: "Invalid status" });
             return;
         }
-        const query = yield Query_1.default.findByIdAndUpdate(id, { status }, { new: true });
+        const query = await Query_1.default.findById(id);
         if (!query) {
             res.status(404).json({ message: "Query not found" });
             return;
+        }
+        if (query.status !== status) {
+            query.status = status;
+            addContactActivity(query, req, "status", `Statut change en ${status}`);
+            await query.save();
         }
         res.status(200).json({
             message: "Query status updated successfully",
@@ -201,13 +239,60 @@ const updateQueryStatus = (req, res) => __awaiter(void 0, void 0, void 0, functi
     catch (error) {
         res.status(500).json({ message: "Failed to update query status" });
     }
-});
+};
 exports.updateQueryStatus = updateQueryStatus;
+const claimQuery = async (req, res) => {
+    try {
+        const query = await Query_1.default.findById(req.params.id);
+        if (!query) {
+            res.status(404).json({ message: "Query not found" });
+            return;
+        }
+        if (!canModifyContactAssignment(req, query)) {
+            res.status(409).json({
+                message: `This ticket is already handled by ${query.assignedToName || query.assignedToEmail}.`,
+                query,
+            });
+            return;
+        }
+        assignContactToCurrentUser(query, req);
+        await query.save();
+        res.status(200).json({ message: "Query assigned", query });
+    }
+    catch (error) {
+        res.status(500).json({ message: "Failed to assign query" });
+    }
+};
+exports.claimQuery = claimQuery;
+const releaseQuery = async (req, res) => {
+    try {
+        const query = await Query_1.default.findById(req.params.id);
+        if (!query) {
+            res.status(404).json({ message: "Query not found" });
+            return;
+        }
+        if (!canModifyContactAssignment(req, query)) {
+            res.status(403).json({ message: "Only the assigned admin can release this ticket." });
+            return;
+        }
+        const previousOwner = query.assignedToName || query.assignedToEmail || "un admin";
+        query.assignedToEmail = undefined;
+        query.assignedToName = undefined;
+        query.assignedAt = undefined;
+        addContactActivity(query, req, "released", `Ticket libere de ${previousOwner}`);
+        await query.save();
+        res.status(200).json({ message: "Query released", query });
+    }
+    catch (error) {
+        res.status(500).json({ message: "Failed to release query" });
+    }
+};
+exports.releaseQuery = releaseQuery;
 // Delete contact query (admin only)
-const deleteQuery = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+const deleteQuery = async (req, res) => {
     try {
         const { id } = req.params;
-        const query = yield Query_1.default.findByIdAndDelete(id);
+        const query = await Query_1.default.findByIdAndDelete(id);
         if (!query) {
             res.status(404).json({ message: "Query not found" });
             return;
@@ -219,5 +304,5 @@ const deleteQuery = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
     catch (error) {
         res.status(500).json({ message: "Failed to delete query" });
     }
-});
+};
 exports.deleteQuery = deleteQuery;

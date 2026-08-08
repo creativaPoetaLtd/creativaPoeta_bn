@@ -3,12 +3,38 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.adminOnly = exports.authorizeRoles = exports.authenticateUser = void 0;
+exports.superAdminOnly = exports.adminUserManagerOnly = exports.adminOnly = exports.authorizeRoles = exports.authenticateUser = exports.canManageAdminUsers = exports.canAccessDashboard = exports.getEffectiveAdminRole = exports.isRootAdminEmail = exports.normalizeAdminRole = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
 const JWT_SECRET = process.env.JWT_SECRET;
-// Middleware for authentication
+const ROOT_ADMIN_EMAILS = (process.env.ROOT_ADMIN_EMAILS || "admin@creativapoeta.com,admin@cp.com")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+const legacyRoleMap = {
+    admin: "admin_0",
+    editor: "admin_2",
+    viewer: "admin_4",
+};
+const normalizeAdminRole = (role) => {
+    if (!role)
+        return "admin_5";
+    return legacyRoleMap[role] || role;
+};
+exports.normalizeAdminRole = normalizeAdminRole;
+const isRootAdminEmail = (email) => Boolean(email && ROOT_ADMIN_EMAILS.includes(email.trim().toLowerCase()));
+exports.isRootAdminEmail = isRootAdminEmail;
+const getEffectiveAdminRole = (role, email) => {
+    if ((0, exports.isRootAdminEmail)(email))
+        return "super_admin";
+    return (0, exports.normalizeAdminRole)(role);
+};
+exports.getEffectiveAdminRole = getEffectiveAdminRole;
+const canAccessDashboard = (role, email) => ["super_admin", "admin_0", "admin_1", "admin_2", "admin_3", "admin_4", "admin_5"].includes((0, exports.getEffectiveAdminRole)(role, email));
+exports.canAccessDashboard = canAccessDashboard;
+const canManageAdminUsers = (role, email) => ["super_admin", "admin_0"].includes((0, exports.getEffectiveAdminRole)(role, email));
+exports.canManageAdminUsers = canManageAdminUsers;
 const authenticateUser = (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -30,7 +56,11 @@ const authenticateUser = (req, res, next) => {
             return;
         }
         const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
-        req.user = decoded; // Ensure `decoded` contains necessary info
+        if (decoded.isActive === false) {
+            res.status(403).json({ message: "Account is disabled." });
+            return;
+        }
+        req.user = { ...decoded, role: (0, exports.getEffectiveAdminRole)(decoded.role, decoded.email) };
         next();
     }
     catch (err) {
@@ -51,7 +81,6 @@ const authenticateUser = (req, res, next) => {
     }
 };
 exports.authenticateUser = authenticateUser;
-// Middleware for role-based access (simplified - all users are admins)
 const authorizeRoles = (roles) => {
     return (req, res, next) => {
         if (!req.user) {
@@ -60,13 +89,14 @@ const authorizeRoles = (roles) => {
                 .json({ message: "Access denied. User not authenticated." });
             return;
         }
-        // Since all users are admins, just check if user is authenticated
-        // No need to check roles since everyone is admin
+        if (!roles.includes((0, exports.getEffectiveAdminRole)(req.user.role, req.user.email))) {
+            res.status(403).json({ message: "Access denied. Insufficient role." });
+            return;
+        }
         next();
     };
 };
 exports.authorizeRoles = authorizeRoles;
-// Simplified admin-only middleware (since all users are admins)
 const adminOnly = (req, res, next) => {
     if (!req.user) {
         res
@@ -74,7 +104,38 @@ const adminOnly = (req, res, next) => {
             .json({ message: "Access denied. Admin authentication required." });
         return;
     }
-    // All authenticated users are admins
+    if (!(0, exports.canAccessDashboard)(req.user.role, req.user.email)) {
+        res.status(403).json({ message: "Access denied. Admin role required." });
+        return;
+    }
     next();
 };
 exports.adminOnly = adminOnly;
+const adminUserManagerOnly = (req, res, next) => {
+    if (!req.user) {
+        res
+            .status(401)
+            .json({ message: "Access denied. Admin authentication required." });
+        return;
+    }
+    if (!(0, exports.canManageAdminUsers)(req.user.role, req.user.email)) {
+        res.status(403).json({ message: "Access denied. User management role required." });
+        return;
+    }
+    next();
+};
+exports.adminUserManagerOnly = adminUserManagerOnly;
+const superAdminOnly = (req, res, next) => {
+    if (!req.user) {
+        res
+            .status(401)
+            .json({ message: "Access denied. Authorized account required." });
+        return;
+    }
+    if ((0, exports.getEffectiveAdminRole)(req.user.role, req.user.email) !== "super_admin") {
+        res.status(403).json({ message: "Access denied. Authorized account required." });
+        return;
+    }
+    next();
+};
+exports.superAdminOnly = superAdminOnly;

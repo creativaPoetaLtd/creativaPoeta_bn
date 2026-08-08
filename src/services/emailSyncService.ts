@@ -1,6 +1,7 @@
 import { ImapFlow } from "imapflow";
 import { simpleParser, AddressObject } from "mailparser";
 import EmailMessage from "../models/EmailMessage";
+import { DMARC_REPORT_FOLDER, dmarcReportMongoFilter, isDmarcReport } from "../utils/emailFilters";
 
 interface MailboxConfig {
   key: string;
@@ -146,6 +147,14 @@ const syncMailbox = async (
           parsed.date ||
           (message.internalDate ? new Date(message.internalDate as any) : new Date());
 
+        const isDmarc = isDmarcReport({
+          fromName: from?.name || "",
+          fromEmail: from?.address || "",
+          subject: parsed.subject || "",
+          text,
+          html,
+        });
+
         const payload = {
           mailbox: config.key,
           mailboxAddress: config.address.toLowerCase(),
@@ -159,7 +168,8 @@ const syncMailbox = async (
           preview: createPreview(text, html),
           text,
           html,
-          status: message.flags?.has("\\Seen") ? "read" : "new",
+          folder: isDmarc ? DMARC_REPORT_FOLDER : "inbox",
+          status: isDmarc ? "read" : message.flags?.has("\\Seen") ? "read" : "new",
           isSeenOnServer: Boolean(message.flags?.has("\\Seen")),
           receivedAt,
           syncedAt: new Date(),
@@ -189,6 +199,15 @@ const syncMailbox = async (
         result.skipped += 1;
       }
     }
+
+    await EmailMessage.updateMany(
+      {
+        mailbox: config.key,
+        folder: { $ne: DMARC_REPORT_FOLDER },
+        ...dmarcReportMongoFilter,
+      },
+      { $set: { folder: DMARC_REPORT_FOLDER, status: "read" } }
+    );
 
     await client.logout();
     return result;

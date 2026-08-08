@@ -1,23 +1,42 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteProjectRequest = exports.updateProjectRequestStatus = exports.replyToProjectRequest = exports.getProjectRequest = exports.getAllProjectRequests = exports.sendProjectInquiry = void 0;
+exports.deleteProjectRequest = exports.releaseProjectRequest = exports.claimProjectRequest = exports.updateProjectRequestStatus = exports.replyToProjectRequest = exports.getProjectRequest = exports.getAllProjectRequests = exports.getProjectRequestSummary = exports.sendProjectInquiry = void 0;
 const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
 const ProjectDescription_1 = __importDefault(require("../models/ProjectDescription"));
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
-const sendProjectInquiry = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+const getAdminEmail = (req) => { var _a; return String(((_a = req.user) === null || _a === void 0 ? void 0 : _a.email) || "").toLowerCase().trim(); };
+const getAdminName = (req) => { var _a, _b; return String(((_a = req.user) === null || _a === void 0 ? void 0 : _a.name) || ((_b = req.user) === null || _b === void 0 ? void 0 : _b.email) || "Admin").trim(); };
+const addProjectActivity = (request, req, type, message) => {
+    request.activity = request.activity || [];
+    request.activity.push({
+        type,
+        message,
+        actorEmail: getAdminEmail(req),
+        actorName: getAdminName(req),
+        at: new Date(),
+    });
+};
+const assignProjectToCurrentUser = (request, req, message = "Ticket pris en charge") => {
+    request.assignedToEmail = getAdminEmail(req);
+    request.assignedToName = getAdminName(req);
+    request.assignedAt = new Date();
+    addProjectActivity(request, req, "assigned", message);
+};
+const canModifyProjectAssignment = (req, request) => !request.assignedToEmail || request.assignedToEmail === getAdminEmail(req);
+const getProjectBucket = (request) => {
+    const serviceType = String(request.serviceType || "").toLowerCase();
+    const selected = Array.isArray(request.selectedServices) ? request.selectedServices.join(" ").toLowerCase() : "";
+    if (serviceType.includes("diagnostic visibilite") || serviceType.includes("visibility test") || selected.includes("test visibilite"))
+        return "visibility";
+    if (serviceType.includes("assistance numerique") || serviceType.includes("digital assistance") || serviceType.includes("depannage") || selected.includes("depannage") || selected.includes("troubleshooting"))
+        return "assistance";
+    return "projects";
+};
+const sendProjectInquiry = async (req, res, next) => {
     try {
         const { name, email, phone, company, serviceType, selectedServices, customServiceDescription, customServiceNeeds, serviceSpecificOtherDescription, additionalInfo, } = req.body;
         // Basic required field validation
@@ -45,7 +64,7 @@ const sendProjectInquiry = (req, res, next) => __awaiter(void 0, void 0, void 0,
             additionalInfo: additionalInfo === null || additionalInfo === void 0 ? void 0 : additionalInfo.trim(),
             // status will default to "pending" from the model
         });
-        const savedRequest = yield projectRequest.save();
+        const savedRequest = await projectRequest.save();
         // Construct the beautiful HTML content for the email
         const htmlContent = `
 <!DOCTYPE html>
@@ -298,7 +317,7 @@ const sendProjectInquiry = (req, res, next) => __awaiter(void 0, void 0, void 0,
         let emailSent = false;
         if (emailUser) {
             try {
-                yield (0, sendEmail_1.default)(emailUser, "New Project Inquiry", htmlContent);
+                await (0, sendEmail_1.default)(emailUser, "New Project Inquiry", htmlContent);
                 emailSent = true;
                 console.log("Email notification sent successfully");
             }
@@ -317,10 +336,35 @@ const sendProjectInquiry = (req, res, next) => __awaiter(void 0, void 0, void 0,
     catch (error) {
         next(error);
     }
-});
+};
 exports.sendProjectInquiry = sendProjectInquiry;
+const getProjectRequestSummary = async (req, res, next) => {
+    try {
+        const requests = await ProjectDescription_1.default.find({}, "status isReplied serviceType selectedServices assignedToEmail").lean();
+        const metrics = {
+            projects: 0,
+            visibility: 0,
+            assistance: 0,
+            assignedToMe: 0,
+        };
+        const currentEmail = getAdminEmail(req);
+        requests.forEach((request) => {
+            const status = String(request.status || "pending").toLowerCase();
+            const needsAttention = !request.isReplied && ["pending", "in-review", "in-progress"].includes(status);
+            if (needsAttention)
+                metrics[getProjectBucket(request)] += 1;
+            if (request.assignedToEmail && request.assignedToEmail === currentEmail && status !== "completed")
+                metrics.assignedToMe += 1;
+        });
+        res.status(200).json({ metrics });
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.getProjectRequestSummary = getProjectRequestSummary;
 // Get all project requests for dashboard
-const getAllProjectRequests = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+const getAllProjectRequests = async (req, res, next) => {
     try {
         const { status, page = 1, limit = 10 } = req.query;
         const filter = {};
@@ -328,11 +372,11 @@ const getAllProjectRequests = (req, res, next) => __awaiter(void 0, void 0, void
             filter.status = status;
         }
         const skip = (Number(page) - 1) * Number(limit);
-        const requests = yield ProjectDescription_1.default.find(filter)
+        const requests = await ProjectDescription_1.default.find(filter)
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(Number(limit));
-        const total = yield ProjectDescription_1.default.countDocuments(filter);
+        const total = await ProjectDescription_1.default.countDocuments(filter);
         res.status(200).json({
             message: "Project requests fetched successfully",
             requests,
@@ -347,17 +391,19 @@ const getAllProjectRequests = (req, res, next) => __awaiter(void 0, void 0, void
     catch (error) {
         next(error);
     }
-});
+};
 exports.getAllProjectRequests = getAllProjectRequests;
 // Get single project request
-const getProjectRequest = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+const getProjectRequest = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const request = yield ProjectDescription_1.default.findById(id);
+        const request = await ProjectDescription_1.default.findById(id);
         if (!request) {
             res.status(404).json({ message: "Project request not found" });
             return;
         }
+        addProjectActivity(request, req, "opened", "Ticket ouvert");
+        await request.save();
         res.status(200).json({
             message: "Project request fetched successfully",
             request,
@@ -366,10 +412,10 @@ const getProjectRequest = (req, res, next) => __awaiter(void 0, void 0, void 0, 
     catch (error) {
         next(error);
     }
-});
+};
 exports.getProjectRequest = getProjectRequest;
 // Reply to a project request
-const replyToProjectRequest = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+const replyToProjectRequest = async (req, res, next) => {
     var _a, _b;
     try {
         const { id } = req.params;
@@ -380,10 +426,16 @@ const replyToProjectRequest = (req, res, next) => __awaiter(void 0, void 0, void
                 .json({ message: "Reply message and subject are required." });
             return;
         }
-        const request = yield ProjectDescription_1.default.findById(id);
+        const request = await ProjectDescription_1.default.findById(id);
         if (!request) {
             res.status(404).json({ message: "Project request not found" });
             return;
+        }
+        if (!request.assignedToEmail) {
+            assignProjectToCurrentUser(request, req, "Ticket pris en charge pendant la reponse");
+        }
+        else if (request.assignedToEmail !== getAdminEmail(req)) {
+            addProjectActivity(request, req, "replied", `Reponse envoyee alors que le ticket etait assigne a ${request.assignedToName || request.assignedToEmail}`);
         }
         // Update the request with reply information
         request.isReplied = true;
@@ -391,7 +443,8 @@ const replyToProjectRequest = (req, res, next) => __awaiter(void 0, void 0, void
         request.repliedAt = new Date();
         request.repliedBy = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.name) || ((_b = req.user) === null || _b === void 0 ? void 0 : _b.email) || "Admin";
         request.status = "replied";
-        yield request.save();
+        addProjectActivity(request, req, "replied", `Reponse envoyee: ${subject}`);
+        await request.save();
         // Prepare beautiful email content for the client
         const clientEmailContent = `
 <!DOCTYPE html>
@@ -620,7 +673,7 @@ const replyToProjectRequest = (req, res, next) => __awaiter(void 0, void 0, void
         // Send reply email to client (optional - don't fail if email fails)
         let emailSent = false;
         try {
-            yield (0, sendEmail_1.default)(request.email, subject, clientEmailContent);
+            await (0, sendEmail_1.default)(request.email, subject, clientEmailContent);
             emailSent = true;
             console.log(`Reply email sent to ${request.email}`);
         }
@@ -643,10 +696,10 @@ const replyToProjectRequest = (req, res, next) => __awaiter(void 0, void 0, void
     catch (error) {
         next(error);
     }
-});
+};
 exports.replyToProjectRequest = replyToProjectRequest;
 // Update project request status
-const updateProjectRequestStatus = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+const updateProjectRequestStatus = async (req, res, next) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
@@ -673,10 +726,15 @@ const updateProjectRequestStatus = (req, res, next) => __awaiter(void 0, void 0,
             });
             return;
         }
-        const request = yield ProjectDescription_1.default.findByIdAndUpdate(id, { status: normalizedStatus, updatedAt: new Date() }, { new: true });
+        const request = await ProjectDescription_1.default.findById(id);
         if (!request) {
             res.status(404).json({ message: "Project request not found" });
             return;
+        }
+        if (request.status !== normalizedStatus) {
+            request.status = normalizedStatus;
+            addProjectActivity(request, req, "status", `Statut change en ${normalizedStatus}`);
+            await request.save();
         }
         res.status(200).json({
             message: "Project request status updated successfully",
@@ -686,13 +744,60 @@ const updateProjectRequestStatus = (req, res, next) => __awaiter(void 0, void 0,
     catch (error) {
         next(error);
     }
-});
+};
 exports.updateProjectRequestStatus = updateProjectRequestStatus;
+const claimProjectRequest = async (req, res, next) => {
+    try {
+        const request = await ProjectDescription_1.default.findById(req.params.id);
+        if (!request) {
+            res.status(404).json({ message: "Project request not found" });
+            return;
+        }
+        if (!canModifyProjectAssignment(req, request)) {
+            res.status(409).json({
+                message: `This ticket is already handled by ${request.assignedToName || request.assignedToEmail}.`,
+                request,
+            });
+            return;
+        }
+        assignProjectToCurrentUser(request, req);
+        await request.save();
+        res.status(200).json({ message: "Project request assigned", request });
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.claimProjectRequest = claimProjectRequest;
+const releaseProjectRequest = async (req, res, next) => {
+    try {
+        const request = await ProjectDescription_1.default.findById(req.params.id);
+        if (!request) {
+            res.status(404).json({ message: "Project request not found" });
+            return;
+        }
+        if (!canModifyProjectAssignment(req, request)) {
+            res.status(403).json({ message: "Only the assigned admin can release this ticket." });
+            return;
+        }
+        const previousOwner = request.assignedToName || request.assignedToEmail || "un admin";
+        request.assignedToEmail = undefined;
+        request.assignedToName = undefined;
+        request.assignedAt = undefined;
+        addProjectActivity(request, req, "released", `Ticket libere de ${previousOwner}`);
+        await request.save();
+        res.status(200).json({ message: "Project request released", request });
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.releaseProjectRequest = releaseProjectRequest;
 // Delete project request
-const deleteProjectRequest = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+const deleteProjectRequest = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const request = yield ProjectDescription_1.default.findByIdAndDelete(id);
+        const request = await ProjectDescription_1.default.findByIdAndDelete(id);
         if (!request) {
             res.status(404).json({ message: "Project request not found" });
             return;
@@ -704,5 +809,5 @@ const deleteProjectRequest = (req, res, next) => __awaiter(void 0, void 0, void 
     catch (error) {
         next(error);
     }
-});
+};
 exports.deleteProjectRequest = deleteProjectRequest;

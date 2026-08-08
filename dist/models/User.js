@@ -34,10 +34,51 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const MailboxAccessSchema = new mongoose_1.Schema({
+    address: { type: String, trim: true, lowercase: true, required: true },
+    permission: {
+        type: String,
+        enum: ["read", "send", "manage"],
+        default: "read",
+    },
+    type: {
+        type: String,
+        enum: ["personal", "shared"],
+        default: "shared",
+    },
+}, { _id: false });
 const UserSchema = new mongoose_1.Schema({
     name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    role: { type: String, enum: ["admin"], default: "admin" },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    password: { type: String, default: "" },
+    role: {
+        type: String,
+        enum: [
+            "super_admin",
+            "admin_0",
+            "admin_1",
+            "admin_2",
+            "admin_3",
+            "admin_4",
+            "admin_5",
+            "admin",
+            "editor",
+            "viewer",
+        ],
+        default: "admin_1",
+    },
+    isActive: { type: Boolean, default: true },
+    accountStatus: {
+        type: String,
+        enum: ["pending", "active", "disabled"],
+        default: "active",
+    },
+    passwordSetAt: { type: Date },
+    resetTokenHash: { type: String },
+    resetTokenExpiresAt: { type: Date },
+    mailboxAccess: { type: [MailboxAccessSchema], default: [] },
+    permissionsAllow: { type: [String], default: [] },
+    permissionsDeny: { type: [String], default: [] },
+    internalGroups: { type: [String], default: [] },
 }, { timestamps: true });
 exports.default = mongoose_1.default.model("User", UserSchema);

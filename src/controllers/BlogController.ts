@@ -9,6 +9,8 @@ import {
   BlogGenerationInput,
   evaluateDraftQuality,
   generateBlogDrafts,
+  planSeoTopics,
+  SeoAssistantTopicInput,
 } from "../services/blogGenerationService";
 
 const LANGUAGES = new Set<BlogLanguage>(["fr", "en", "nl", "kiny"]);
@@ -223,6 +225,34 @@ export const createBlog = async (
     });
   } catch (error) {
     if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    next(error);
+  }
+};
+
+
+export const planProgrammaticBlogTopics = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const seed = String(req.body.seed || "").trim().slice(0, 180);
+    const requestedLanguage = String(req.body.language || "fr") as BlogLanguage;
+    const language = LANGUAGES.has(requestedLanguage) ? requestedLanguage : "fr";
+    const count = Math.min(10, Math.max(1, Number(req.body.count) || 10));
+    const input: SeoAssistantTopicInput = {
+      seed,
+      audience: String(req.body.audience || "PME, independants et associations").trim().slice(0, 180),
+      location: String(req.body.location || "Belgique").trim().slice(0, 120),
+      goal: String(req.body.goal || "generer des articles utiles qui convertissent vers les services CP").trim().slice(0, 220),
+      language,
+      count,
+      includeAffiliate: ["true", "1", "on", true].includes(req.body.includeAffiliate),
+    };
+
+    const result = await planSeoTopics(input);
+    res.status(200).json(result);
+  } catch (error) {
     next(error);
   }
 };

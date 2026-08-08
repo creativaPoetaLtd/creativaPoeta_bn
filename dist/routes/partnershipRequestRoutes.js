@@ -1,0 +1,21 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const partnershipRequestController_1 = require("../controllers/partnershipRequestController");
+const authMiddleware_1 = require("../middleware/authMiddleware");
+const permissionMiddleware_1 = require("../middleware/permissionMiddleware");
+const router = express_1.default.Router();
+const canManagePartnerships = (0, permissionMiddleware_1.authorizeAdminPermission)("requests:partnerships", ["admin_1"]);
+router.post("/", partnershipRequestController_1.createPartnershipRequest);
+router.get("/", authMiddleware_1.authenticateUser, canManagePartnerships, partnershipRequestController_1.getPartnershipRequests);
+router.get("/summary", authMiddleware_1.authenticateUser, canManagePartnerships, partnershipRequestController_1.getPartnershipRequestSummary);
+router.get("/:id", authMiddleware_1.authenticateUser, canManagePartnerships, partnershipRequestController_1.getPartnershipRequest);
+router.post("/:id/claim", authMiddleware_1.authenticateUser, canManagePartnerships, partnershipRequestController_1.claimPartnershipRequest);
+router.post("/:id/release", authMiddleware_1.authenticateUser, canManagePartnerships, partnershipRequestController_1.releasePartnershipRequest);
+router.post("/:id/reply", authMiddleware_1.authenticateUser, canManagePartnerships, partnershipRequestController_1.replyToPartnershipRequest);
+router.patch("/:id/status", authMiddleware_1.authenticateUser, canManagePartnerships, partnershipRequestController_1.updatePartnershipRequestStatus);
+router.delete("/:id", authMiddleware_1.authenticateUser, canManagePartnerships, partnershipRequestController_1.deletePartnershipRequest);
+exports.default = router;

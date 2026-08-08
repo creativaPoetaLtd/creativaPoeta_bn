@@ -9,6 +9,7 @@ import {
   getComments,
   getSingleBlog,
   generateProgrammaticBlogs,
+  planProgrammaticBlogTopics,
   rebuildBlogSeo,
   updateBlog,
 } from "../controllers/BlogController";
@@ -35,6 +36,12 @@ BlogRouter.post(
   authenticateUser,
   adminOnly,
   generateProgrammaticBlogs
+);
+BlogRouter.post(
+  "/admin/assistant/topics",
+  authenticateUser,
+  adminOnly,
+  planProgrammaticBlogTopics
 );
 BlogRouter.post(
   "/",

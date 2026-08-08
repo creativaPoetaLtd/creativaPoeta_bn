@@ -6,6 +6,7 @@ import { getEffectiveAdminRole } from "../middleware/authMiddleware";
 import { syncConfiguredMailboxes } from "../services/emailSyncService";
 import sendEmail from "../utils/sendEmail";
 import { escapeHtml, formatParagraphs, renderQuotedEmailBlock } from "../utils/emailTemplate";
+import { DMARC_REPORT_FOLDER, dmarcReportMongoFilter } from "../utils/emailFilters";
 
 const allowedStatuses = ["new", "read", "replied", "archived"];
 const MAX_ATTACHMENT_TOTAL_BYTES = 8 * 1024 * 1024;
@@ -18,6 +19,23 @@ const normalizeReplySubject = (subject: string) =>
 const normalizeForwardSubject = (subject: string) =>
   /^(fw|fwd):/i.test(subject.trim()) ? subject.trim() : `Fwd: ${subject.trim() || "Forwarded message"}`;
 
+const applyInboundFolderFilter = (filter: any, folder: string) => {
+  if (folder === DMARC_REPORT_FOLDER) {
+    filter.folder = DMARC_REPORT_FOLDER;
+    return;
+  }
+
+  filter.$and = [
+    ...(filter.$and || []),
+    {
+      $or: [
+        { folder: "inbox" },
+        { folder: { $exists: false } },
+        { folder: "" },
+      ],
+    },
+  ];
+};
 const parseQueryValues = (value: unknown): string[] =>
   String(value || "")
     .split(",")
@@ -187,9 +205,13 @@ const isValidCronToken = (req: Request) => {
 const notifyAdminAboutNewEmails = async (syncStartedAt: Date, importedCount: number) => {
   if (importedCount <= 0) return;
 
-  const newEmails = await EmailMessage.find({ createdAt: { $gte: syncStartedAt } })
+  const inboxFolderFilter: any = {};
+  applyInboundFolderFilter(inboxFolderFilter, "inbox");
+  const newEmails = await EmailMessage.find({ createdAt: { $gte: syncStartedAt }, ...inboxFolderFilter })
     .sort({ receivedAt: -1 })
     .limit(8);
+
+  if (!newEmails.length) return;
 
   const rows = newEmails
     .map((email) => {
@@ -231,7 +253,7 @@ const notifyAdminAboutNewEmails = async (syncStartedAt: Date, importedCount: num
 
   await sendEmail(getAdminNotificationEmail(), "Nouveau mail recu dans CP Mail", content, {
     title: "Nouveau mail recu dans CP Mail",
-    preheader: `${importedCount} nouveau(x) message(s) dans Creativa Poeta Mail.`,
+    preheader: `${newEmails.length} nouveau(x) message(s) dans Creativa Poeta Mail.`,
     replyTo: process.env.REPLY_TO_EMAIL || process.env.SMTP_FROM_EMAIL || "contact@creativapoeta.com",
   });
 };
@@ -318,9 +340,18 @@ export const syncEmails = async (req: Request, res: Response): Promise<void> => 
   try {
     const limit = Number(req.body?.limit || req.query.limit || 50);
     const result = await syncConfiguredMailboxes(limit);
+    const filteredDmarcReports = await EmailMessage.updateMany(
+      {
+        folder: { $ne: DMARC_REPORT_FOLDER },
+        ...dmarcReportMongoFilter,
+      },
+      { $set: { folder: DMARC_REPORT_FOLDER, status: "read" } }
+    );
+
     res.status(200).json({
       message: "Email sync completed",
       ...result,
+      filteredDmarcReports: filteredDmarcReports.modifiedCount || 0,
     });
   } catch (error: any) {
     res.status(500).json({
@@ -368,6 +399,7 @@ export const cronSyncEmails = async (req: Request, res: Response): Promise<void>
 export const getEmailSummary = async (req: Request, res: Response): Promise<void> => {
   try {
     const filter: any = {};
+    applyInboundFolderFilter(filter, "inbox");
     await applyInboundMailboxAccess(req, filter);
 
     const currentEmail = getAdminEmail(req);
@@ -408,8 +440,10 @@ export const getEmails = async (req: Request, res: Response): Promise<void> => {
     const limit = Math.max(1, Math.min(Number(req.query.limit || 25), 100));
     const status = String(req.query.status || "all");
     const mailbox = String(req.query.mailbox || "all");
+    const folder = String(req.query.folder || "inbox").toLowerCase();
     const search = String(req.query.search || "").trim();
     const filter: any = {};
+    applyInboundFolderFilter(filter, folder);
 
     const selectedStatuses = parseQueryValues(status).filter((item) => allowedStatuses.includes(item));
     const selectedMailboxes = parseQueryValues(mailbox).filter((item) => item && item !== "all");

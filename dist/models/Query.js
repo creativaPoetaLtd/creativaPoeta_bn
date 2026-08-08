@@ -47,5 +47,22 @@ const QuerySchema = new mongoose_1.Schema({
     replyMessage: { type: String },
     repliedAt: { type: Date },
     repliedBy: { type: String },
+    assignedToEmail: { type: String, trim: true, lowercase: true },
+    assignedToName: { type: String, trim: true },
+    assignedAt: { type: Date },
+    activity: [
+        {
+            type: {
+                type: String,
+                enum: ["assigned", "released", "opened", "replied", "status"],
+                required: true,
+            },
+            message: { type: String, required: true },
+            actorEmail: { type: String, trim: true, lowercase: true },
+            actorName: { type: String, trim: true },
+            at: { type: Date, default: Date.now },
+        },
+    ],
 }, { timestamps: true });
+QuerySchema.index({ assignedToEmail: 1, createdAt: -1 });
 exports.default = mongoose_1.default.model("Query", QuerySchema);

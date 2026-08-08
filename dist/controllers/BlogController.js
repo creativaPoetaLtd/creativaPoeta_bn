@@ -1,235 +1,514 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteComment = exports.getComments = exports.addComment = exports.updateBlog = exports.getSingleBlog = exports.fetchBlogs = exports.createBlog = void 0;
+exports.deleteComment = exports.getComments = exports.addComment = exports.rebuildBlogSeo = exports.deleteBlog = exports.updateBlog = exports.getSingleBlog = exports.fetchAdminBlogs = exports.fetchBlogs = exports.generateProgrammaticBlogs = exports.planProgrammaticBlogTopics = exports.createBlog = void 0;
+const fs_1 = __importDefault(require("fs"));
+const mongoose_1 = __importDefault(require("mongoose"));
 const Blog_1 = __importDefault(require("../models/Blog"));
 const cloudinary_1 = require("../utils/cloudinary");
-const fs_1 = __importDefault(require("fs"));
-const createBlog = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b;
+const frontendBuildService_1 = require("../services/frontendBuildService");
+const blogRelatedService_1 = require("../services/blogRelatedService");
+const blogGenerationService_1 = require("../services/blogGenerationService");
+const LANGUAGES = new Set(["fr", "en", "nl", "kiny"]);
+const STATUSES = new Set(["draft", "published", "archived"]);
+const slugify = (value) => value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 180) || "article";
+const plainText = (html) => html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+const parseTags = (value) => {
+    if (Array.isArray(value))
+        return value.map(String);
+    if (typeof value !== "string")
+        return [];
     try {
-        const { title, content } = req.body;
-        if (!title || !content) {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed))
+            return parsed.map(String);
+    }
+    catch {
+        // Comma-separated form values are supported.
+    }
+    return value.split(",");
+};
+const cleanTags = (value) => Array.from(new Set(parseTags(value)
+    .map((tag) => tag.trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 12)));
+const uploadBlogImage = async (req) => {
+    var _a;
+    if (!req.file)
+        return undefined;
+    try {
+        const fileBuffer = fs_1.default.readFileSync(req.file.path);
+        const result = await (0, cloudinary_1.uploadToCloudinary)(fileBuffer, "blogs");
+        return result.secure_url;
+    }
+    finally {
+        if (((_a = req.file) === null || _a === void 0 ? void 0 : _a.path) && fs_1.default.existsSync(req.file.path)) {
+            fs_1.default.unlinkSync(req.file.path);
+        }
+    }
+};
+const uniqueSlug = async (requested, language, excludedId) => {
+    const base = slugify(requested);
+    let candidate = base;
+    let suffix = 2;
+    while (await Blog_1.default.exists({
+        slug: candidate,
+        language,
+        ...(excludedId ? { _id: { $ne: excludedId } } : {}),
+    })) {
+        candidate = `${base}-${suffix}`;
+        suffix += 1;
+    }
+    return candidate;
+};
+const publicFilter = (language) => {
+    const clauses = [
+        {
+            $or: [
+                { status: "published" },
+                { status: { $exists: false } },
+                { status: null },
+            ],
+        },
+    ];
+    if (language && LANGUAGES.has(language)) {
+        clauses.push({
+            $or: [
+                { language },
+                { language: { $exists: false } },
+                { language: null },
+            ],
+        });
+    }
+    return { $and: clauses };
+};
+const basePayload = async (req, existing) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+    const title = String((_b = (_a = req.body.title) !== null && _a !== void 0 ? _a : existing === null || existing === void 0 ? void 0 : existing.title) !== null && _b !== void 0 ? _b : "").trim();
+    const content = String((_d = (_c = req.body.content) !== null && _c !== void 0 ? _c : existing === null || existing === void 0 ? void 0 : existing.content) !== null && _d !== void 0 ? _d : "").trim();
+    const requestedLanguage = String((_f = (_e = req.body.language) !== null && _e !== void 0 ? _e : existing === null || existing === void 0 ? void 0 : existing.language) !== null && _f !== void 0 ? _f : "fr");
+    const language = LANGUAGES.has(requestedLanguage) ? requestedLanguage : "fr";
+    const requestedStatus = String((_h = (_g = req.body.status) !== null && _g !== void 0 ? _g : existing === null || existing === void 0 ? void 0 : existing.status) !== null && _h !== void 0 ? _h : "draft");
+    const status = STATUSES.has(requestedStatus) ? requestedStatus : "draft";
+    const requestedSlug = String(req.body.slug || title);
+    const slug = await uniqueSlug(requestedSlug, language, existing === null || existing === void 0 ? void 0 : existing.id);
+    const excerpt = String(req.body.excerpt || "").trim() ||
+        (existing === null || existing === void 0 ? void 0 : existing.excerpt) ||
+        plainText(content).slice(0, 240);
+    const image = await uploadBlogImage(req);
+    return {
+        title,
+        slug,
+        excerpt,
+        content,
+        image: image !== null && image !== void 0 ? image : existing === null || existing === void 0 ? void 0 : existing.image,
+        imageAlt: String(req.body.imageAlt || "").trim() ||
+            (existing === null || existing === void 0 ? void 0 : existing.imageAlt) ||
+            title,
+        category: String(req.body.category || "").trim() ||
+            (existing === null || existing === void 0 ? void 0 : existing.category) ||
+            "Conseils",
+        tags: req.body.tags !== undefined ? cleanTags(req.body.tags) : (existing === null || existing === void 0 ? void 0 : existing.tags) || [],
+        language,
+        translationKey: String(req.body.translationKey || "").trim() ||
+            (existing === null || existing === void 0 ? void 0 : existing.translationKey) ||
+            slugify(title),
+        seoTitle: String(req.body.seoTitle || "").trim() ||
+            (existing === null || existing === void 0 ? void 0 : existing.seoTitle) ||
+            title.slice(0, 65),
+        seoDescription: String(req.body.seoDescription || "").trim() ||
+            (existing === null || existing === void 0 ? void 0 : existing.seoDescription) ||
+            excerpt.slice(0, 175),
+        focusKeyword: String(req.body.focusKeyword || "").trim() ||
+            (existing === null || existing === void 0 ? void 0 : existing.focusKeyword) ||
+            "",
+        status,
+        publishedAt: status === "published"
+            ? (existing === null || existing === void 0 ? void 0 : existing.publishedAt) || new Date()
+            : existing === null || existing === void 0 ? void 0 : existing.publishedAt,
+        cta: {
+            label: String(req.body.ctaLabel || "").trim() ||
+                ((_j = existing === null || existing === void 0 ? void 0 : existing.cta) === null || _j === void 0 ? void 0 : _j.label) ||
+                "",
+            url: String(req.body.ctaUrl || "").trim() ||
+                ((_k = existing === null || existing === void 0 ? void 0 : existing.cta) === null || _k === void 0 ? void 0 : _k.url) ||
+                "",
+            type: ["service", "affiliate", "contact"].includes(String(req.body.ctaType))
+                ? req.body.ctaType
+                : ((_l = existing === null || existing === void 0 ? void 0 : existing.cta) === null || _l === void 0 ? void 0 : _l.type) || "service",
+        },
+        affiliateDisclosure: req.body.affiliateDisclosure !== undefined
+            ? ["true", "1", "on", true].includes(req.body.affiliateDisclosure)
+            : (existing === null || existing === void 0 ? void 0 : existing.affiliateDisclosure) || false,
+    };
+};
+const createBlog = async (req, res, next) => {
+    var _a;
+    try {
+        if (!String(req.body.title || "").trim() || !String(req.body.content || "").trim()) {
             res.status(400).json({ message: "Title and content are required." });
             return;
         }
-        let imageUrl = "";
-        if (req.file) {
-            try {
-                // Read the file buffer from the temporary file
-                const fileBuffer = fs_1.default.readFileSync(req.file.path);
-                // Upload to Cloudinary
-                const cloudinaryResult = yield (0, cloudinary_1.uploadToCloudinary)(fileBuffer, "blogs");
-                // Get the secure URL from Cloudinary
-                imageUrl = cloudinaryResult.secure_url;
-                // Clean up: Delete the temporary file after upload
-                fs_1.default.unlinkSync(req.file.path);
-            }
-            catch (uploadError) {
-                // If there's an error uploading to Cloudinary, clean up the temporary file
-                if (((_a = req.file) === null || _a === void 0 ? void 0 : _a.path) && fs_1.default.existsSync(req.file.path)) {
-                    fs_1.default.unlinkSync(req.file.path);
-                }
-                if (uploadError instanceof Error) {
-                    throw new Error(`Failed to upload image: ${uploadError.message}`);
-                }
-                else {
-                    throw new Error("Failed to upload image due to an unknown error.");
-                }
-            }
-        }
-        const blogData = {
-            title,
-            content,
-            author: req.user._id, // Assumes req.user is populated by auth middleware
-            image: imageUrl, // Store the Cloudinary URL
-        };
-        const blog = new Blog_1.default(blogData);
-        yield blog.save();
+        const payload = await basePayload(req);
+        const blog = await Blog_1.default.create({
+            ...payload,
+            author: req.user._id,
+            comments: [],
+        });
+        const seoRebuild = blog.status === "published"
+            ? await (0, frontendBuildService_1.triggerFrontendBuild)(`article published: ${blog.slug || blog.id}`)
+            : undefined;
         res.status(201).json({
             message: "Blog created successfully",
-            blog: Object.assign(Object.assign({}, blog.toJSON()), { image: imageUrl }),
+            blog,
+            seoRebuild,
         });
     }
     catch (error) {
-        // Clean up any temporary files if they exist
-        if (((_b = req.file) === null || _b === void 0 ? void 0 : _b.path) && fs_1.default.existsSync(req.file.path)) {
+        if (((_a = req.file) === null || _a === void 0 ? void 0 : _a.path) && fs_1.default.existsSync(req.file.path))
             fs_1.default.unlinkSync(req.file.path);
-        }
         next(error);
     }
-});
+};
 exports.createBlog = createBlog;
-// Fetch all blogs
-const fetchBlogs = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+const planProgrammaticBlogTopics = async (req, res, next) => {
     try {
-        const blogs = yield Blog_1.default.find().populate("author", "name email");
-        res.status(200).json({ message: "Blogs fetched successfully", blogs });
+        const seed = String(req.body.seed || "").trim().slice(0, 180);
+        const requestedLanguage = String(req.body.language || "fr");
+        const language = LANGUAGES.has(requestedLanguage) ? requestedLanguage : "fr";
+        const count = Math.min(10, Math.max(1, Number(req.body.count) || 10));
+        const input = {
+            seed,
+            audience: String(req.body.audience || "PME, independants et associations").trim().slice(0, 180),
+            location: String(req.body.location || "Belgique").trim().slice(0, 120),
+            goal: String(req.body.goal || "generer des articles utiles qui convertissent vers les services CP").trim().slice(0, 220),
+            language,
+            count,
+            includeAffiliate: ["true", "1", "on", true].includes(req.body.includeAffiliate),
+        };
+        const result = await (0, blogGenerationService_1.planSeoTopics)(input);
+        res.status(200).json(result);
     }
     catch (error) {
         next(error);
     }
-});
-exports.fetchBlogs = fetchBlogs;
-const getSingleBlog = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+};
+exports.planProgrammaticBlogTopics = planProgrammaticBlogTopics;
+const generateProgrammaticBlogs = async (req, res, next) => {
     try {
-        const blogId = req.params.id;
-        const blog = yield Blog_1.default.findById(blogId).populate({
-            path: "author",
-            select: "name email",
+        const topic = String(req.body.topic || "").trim().slice(0, 200);
+        if (topic.length < 3) {
+            res.status(400).json({ message: "A topic of at least 3 characters is required." });
+            return;
+        }
+        const requestedLanguage = String(req.body.language || "fr");
+        const language = LANGUAGES.has(requestedLanguage) ? requestedLanguage : "fr";
+        const requestedIntent = String(req.body.intent || "informational");
+        const intent = ["informational", "commercial", "comparison", "local"].includes(requestedIntent)
+            ? requestedIntent
+            : "informational";
+        const count = Math.min(10, Math.max(1, Number(req.body.count) || 1));
+        const rawKeywords = Array.isArray(req.body.keywords)
+            ? req.body.keywords
+            : String(req.body.keywords || "").split(/[\n,;]/);
+        const keywords = Array.from(new Set(rawKeywords.map((value) => String(value).trim()).filter(Boolean))).slice(0, 20);
+        const category = String(req.body.category || "Conseils").trim().slice(0, 80);
+        const ctaType = ["service", "affiliate", "contact"].includes(String(req.body.ctaType))
+            ? req.body.ctaType
+            : "service";
+        const input = {
+            topic,
+            keywords,
+            audience: String(req.body.audience || "").trim().slice(0, 180),
+            location: String(req.body.location || "").trim().slice(0, 120),
+            intent,
+            language,
+            category,
+            count,
+            ctaLabel: String(req.body.ctaLabel || "").trim().slice(0, 100),
+            ctaUrl: String(req.body.ctaUrl || "").trim().slice(0, 500),
+        };
+        const result = await (0, blogGenerationService_1.generateBlogDrafts)(input);
+        const existing = await Blog_1.default.find({ language }).select("title focusKeyword").lean();
+        const knownTitles = new Set(existing.map((blog) => slugify(blog.title)));
+        const knownKeywords = new Set(existing.map((blog) => slugify(blog.focusKeyword || "")).filter(Boolean));
+        const created = [];
+        const skipped = [];
+        for (const draft of result.drafts) {
+            const titleKey = slugify(draft.title);
+            const keywordKey = slugify(draft.focusKeyword);
+            if (knownTitles.has(titleKey) || (keywordKey && knownKeywords.has(keywordKey))) {
+                skipped.push({ title: draft.title, reason: "duplicate" });
+                continue;
+            }
+            const quality = (0, blogGenerationService_1.evaluateDraftQuality)(draft, input.ctaUrl);
+            const slug = await uniqueSlug(draft.title, language);
+            const blog = await Blog_1.default.create({
+                ...draft,
+                slug,
+                language,
+                category,
+                translationKey: slug,
+                status: "draft",
+                author: req.user._id,
+                cta: { label: input.ctaLabel, url: input.ctaUrl, type: ctaType },
+                affiliateDisclosure: ctaType === "affiliate",
+                generation: {
+                    source: result.source,
+                    batchId: result.batchId,
+                    seed: topic,
+                    qualityScore: quality.score,
+                    qualityIssues: quality.issues,
+                    wordCount: quality.wordCount,
+                    generatedAt: new Date(),
+                },
+                comments: [],
+            });
+            created.push(blog);
+            knownTitles.add(titleKey);
+            if (keywordKey)
+                knownKeywords.add(keywordKey);
+        }
+        res.status(201).json({
+            message: `${created.length} draft(s) created for editorial review.`,
+            source: result.source,
+            batchId: result.batchId,
+            created,
+            skipped,
         });
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.generateProgrammaticBlogs = generateProgrammaticBlogs;
+const fetchBlogs = async (req, res, next) => {
+    try {
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 12));
+        const language = String(req.query.language || "");
+        const category = String(req.query.category || "").trim();
+        const search = String(req.query.search || "").trim();
+        const filter = publicFilter(language);
+        if (category)
+            filter.$and.push({ category });
+        if (search) {
+            filter.$and.push({
+                $or: [
+                    { title: { $regex: search, $options: "i" } },
+                    { excerpt: { $regex: search, $options: "i" } },
+                    { tags: { $in: [new RegExp(search, "i")] } },
+                ],
+            });
+        }
+        const [blogs, total, categories] = await Promise.all([
+            Blog_1.default.find(filter)
+                .select("-comments.email")
+                .populate("author", "name")
+                .sort({ publishedAt: -1, createdAt: -1 })
+                .skip((page - 1) * limit)
+                .limit(limit),
+            Blog_1.default.countDocuments(filter),
+            Blog_1.default.distinct("category", publicFilter(language)),
+        ]);
+        res.status(200).json({
+            blogs,
+            categories: categories.filter(Boolean).sort(),
+            pagination: {
+                page,
+                limit,
+                total,
+                pages: Math.max(1, Math.ceil(total / limit)),
+            },
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.fetchBlogs = fetchBlogs;
+const fetchAdminBlogs = async (req, res, next) => {
+    try {
+        const blogs = await Blog_1.default.find()
+            .populate("author", "name email")
+            .sort({ updatedAt: -1 });
+        res.status(200).json({ blogs });
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.fetchAdminBlogs = fetchAdminBlogs;
+const getSingleBlog = async (req, res, next) => {
+    try {
+        const identifier = req.params.identifier;
+        const language = String(req.query.language || "");
+        const identity = mongoose_1.default.isValidObjectId(identifier)
+            ? { _id: identifier }
+            : { slug: identifier.toLowerCase() };
+        const filter = publicFilter(language);
+        filter.$and.push(identity);
+        const blog = await Blog_1.default.findOne(filter)
+            .select("-comments.email")
+            .populate("author", "name");
         if (!blog) {
             res.status(404).json({ message: "Blog not found" });
             return;
         }
-        res.status(200).json({ message: "Blog fetched successfully", blog });
+        const translations = blog.translationKey
+            ? await Blog_1.default.find({
+                translationKey: blog.translationKey,
+                _id: { $ne: blog._id },
+                $or: [
+                    { status: "published" },
+                    { status: { $exists: false } },
+                    { status: null },
+                ],
+            }).select("title slug language")
+            : [];
+        const relatedArticles = await (0, blogRelatedService_1.findRelatedBlogs)(blog.toObject(), 3);
+        res.status(200).json({ blog, translations, relatedArticles });
     }
     catch (error) {
         next(error);
     }
-});
+};
 exports.getSingleBlog = getSingleBlog;
-// Update a blog
-const updateBlog = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+const updateBlog = async (req, res, next) => {
     var _a, _b;
     try {
-        const blogId = req.params.id;
-        // First check if blog exists
-        const existingBlog = yield Blog_1.default.findById(blogId);
-        if (!existingBlog) {
+        const existing = await Blog_1.default.findById(req.params.id);
+        if (!existing) {
             res.status(404).json({ message: "Blog not found" });
             return;
         }
-        // Handle image upload if a new file is provided
-        let imageUrl = existingBlog.image; // Keep existing image by default
-        if (req.file) {
-            try {
-                // Read the file buffer from the temporary file
-                const fileBuffer = fs_1.default.readFileSync(req.file.path);
-                // Upload to Cloudinary
-                const cloudinaryResult = yield (0, cloudinary_1.uploadToCloudinary)(fileBuffer, "blogs");
-                imageUrl = cloudinaryResult.secure_url;
-                // Clean up: Delete the temporary file after upload
-                fs_1.default.unlinkSync(req.file.path);
-            }
-            catch (uploadError) {
-                // Clean up temporary file if upload fails
-                if (((_a = req.file) === null || _a === void 0 ? void 0 : _a.path) && fs_1.default.existsSync(req.file.path)) {
-                    fs_1.default.unlinkSync(req.file.path);
-                }
-                if (uploadError instanceof Error) {
-                    throw new Error(`Failed to upload image: ${uploadError.message}`);
-                }
-                else {
-                    throw new Error("Failed to upload image due to an unknown error.");
-                }
-            }
+        const wasPublished = (existing.status || "published") === "published";
+        const payload = await basePayload(req, existing);
+        if (((_a = existing.generation) === null || _a === void 0 ? void 0 : _a.source) && existing.generation.source !== "manual") {
+            const cta = payload.cta;
+            const quality = (0, blogGenerationService_1.evaluateDraftQuality)({
+                title: String(payload.title || ""),
+                excerpt: String(payload.excerpt || ""),
+                content: String(payload.content || ""),
+                seoTitle: String(payload.seoTitle || ""),
+                seoDescription: String(payload.seoDescription || ""),
+                focusKeyword: String(payload.focusKeyword || ""),
+                tags: Array.isArray(payload.tags) ? payload.tags.map(String) : [],
+                imageAlt: String(payload.imageAlt || ""),
+            }, String((cta === null || cta === void 0 ? void 0 : cta.url) || ""));
+            payload.generation = {
+                source: existing.generation.source,
+                batchId: existing.generation.batchId,
+                seed: existing.generation.seed,
+                generatedAt: existing.generation.generatedAt,
+                qualityScore: quality.score,
+                qualityIssues: quality.issues,
+                wordCount: quality.wordCount,
+            };
         }
-        const updatedData = Object.assign(Object.assign({}, req.body), { image: imageUrl });
-        // Update the blog
-        const updatedBlog = yield Blog_1.default.findByIdAndUpdate(blogId, updatedData, {
-            new: true,
-        }).populate({
-            path: "author",
-            select: "name email",
-        });
+        existing.set(payload);
+        await existing.save();
+        await existing.populate("author", "name email");
+        const seoRebuild = existing.status === "published"
+            ? await (0, frontendBuildService_1.triggerFrontendBuild)(`${wasPublished ? "article updated" : "article published"}: ${existing.slug || existing.id}`)
+            : wasPublished
+                ? await (0, frontendBuildService_1.triggerFrontendBuild)(`article unpublished: ${existing.slug || existing.id}`)
+                : undefined;
         res.status(200).json({
             message: "Blog updated successfully",
-            blog: updatedBlog,
+            blog: existing,
+            seoRebuild,
         });
     }
     catch (error) {
-        // Clean up any temporary files if they exist
-        if (((_b = req.file) === null || _b === void 0 ? void 0 : _b.path) && fs_1.default.existsSync(req.file.path)) {
+        if (((_b = req.file) === null || _b === void 0 ? void 0 : _b.path) && fs_1.default.existsSync(req.file.path))
             fs_1.default.unlinkSync(req.file.path);
-        }
         next(error);
     }
-});
+};
 exports.updateBlog = updateBlog;
-const addComment = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+const deleteBlog = async (req, res, next) => {
     try {
-        const blogId = req.params.id;
+        const deleted = await Blog_1.default.findByIdAndDelete(req.params.id);
+        if (!deleted) {
+            res.status(404).json({ message: "Blog not found" });
+            return;
+        }
+        const seoRebuild = (deleted.status || "published") === "published"
+            ? await (0, frontendBuildService_1.triggerFrontendBuild)(`article deleted: ${deleted.slug || deleted.id}`)
+            : undefined;
+        res.status(200).json({ message: "Blog deleted successfully", seoRebuild });
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.deleteBlog = deleteBlog;
+const rebuildBlogSeo = async (_req, res, next) => {
+    try {
+        const seoRebuild = await (0, frontendBuildService_1.triggerFrontendBuild)("manual blog SEO rebuild");
+        res.status(seoRebuild.status === "queued" ? 202 : 200).json({
+            message: seoRebuild.message,
+            seoRebuild,
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.rebuildBlogSeo = rebuildBlogSeo;
+const addComment = async (req, res, next) => {
+    try {
         const { name, email, text } = req.body;
-        // Validation
         if (!name || !email || !text) {
-            res
-                .status(400)
-                .json({ message: "Name, email and comment text are required." });
+            res.status(400).json({ message: "Name, email and comment text are required." });
             return;
         }
-        // Additional validation for field lengths
-        if (name.trim().length < 2) {
-            res
-                .status(400)
-                .json({ message: "Name must be at least 2 characters long." });
+        if (!/^[^s@]+@[^s@]+.[^s@]+$/.test(String(email))) {
+            res.status(400).json({ message: "Please provide a valid email address." });
             return;
         }
-        if (text.trim().length < 5) {
-            res
-                .status(400)
-                .json({ message: "Comment must be at least 5 characters long." });
-            return;
-        }
-        if (text.trim().length > 1000) {
-            res
-                .status(400)
-                .json({ message: "Comment must not exceed 1000 characters." });
-            return;
-        }
-        // Email validation
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            res
-                .status(400)
-                .json({ message: "Please provide a valid email address." });
-            return;
-        }
-        const blog = yield Blog_1.default.findById(blogId);
+        const blog = await Blog_1.default.findOne({
+            _id: req.params.id,
+            ...publicFilter(),
+        });
         if (!blog) {
             res.status(404).json({ message: "Blog not found" });
             return;
         }
-        const comment = {
-            name: name.trim(),
-            email: email.trim().toLowerCase(),
-            text: text.trim(),
+        blog.comments.push({
+            name: String(name).trim().slice(0, 100),
+            email: String(email).trim().toLowerCase(),
+            text: String(text).trim().slice(0, 1000),
             createdAt: new Date(),
-        };
-        blog.comments.push(comment);
-        yield blog.save();
+        });
+        await blog.save();
         res.status(201).json({
             message: "Comment added successfully",
-            comment: blog.comments[blog.comments.length - 1], // Return the newly added comment
             totalComments: blog.comments.length,
         });
     }
     catch (error) {
         next(error);
     }
-});
+};
 exports.addComment = addComment;
-const getComments = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+const getComments = async (req, res, next) => {
     try {
-        const blogId = req.params.id;
-        const blog = yield Blog_1.default.findById(blogId).select("comments");
+        const blog = await Blog_1.default.findById(req.params.id).select("comments.name comments.text comments.createdAt");
         if (!blog) {
             res.status(404).json({ message: "Blog not found" });
             return;
         }
         res.status(200).json({
-            message: "Comments fetched successfully",
             comments: blog.comments,
             totalComments: blog.comments.length,
         });
@@ -237,33 +516,26 @@ const getComments = (req, res, next) => __awaiter(void 0, void 0, void 0, functi
     catch (error) {
         next(error);
     }
-});
+};
 exports.getComments = getComments;
-const deleteComment = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+const deleteComment = async (req, res, next) => {
     try {
-        const { blogId, commentId } = req.params;
-        const blog = yield Blog_1.default.findById(blogId);
+        const blog = await Blog_1.default.findById(req.params.blogId);
         if (!blog) {
             res.status(404).json({ message: "Blog not found" });
             return;
         }
-        // Find the comment index
-        const commentIndex = blog.comments.findIndex((comment) => { var _a; return ((_a = comment._id) === null || _a === void 0 ? void 0 : _a.toString()) === commentId; });
-        if (commentIndex === -1) {
+        const index = blog.comments.findIndex((comment) => { var _a; return ((_a = comment._id) === null || _a === void 0 ? void 0 : _a.toString()) === req.params.commentId; });
+        if (index < 0) {
             res.status(404).json({ message: "Comment not found" });
             return;
         }
-        // Remove the comment
-        blog.comments.splice(commentIndex, 1);
-        yield blog.save();
-        res.status(200).json({
-            message: "Comment deleted successfully",
-            comments: blog.comments,
-            totalComments: blog.comments.length,
-        });
+        blog.comments.splice(index, 1);
+        await blog.save();
+        res.status(200).json({ message: "Comment deleted" });
     }
     catch (error) {
         next(error);
     }
-});
+};
 exports.deleteComment = deleteComment;

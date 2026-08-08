@@ -1,6 +1,7 @@
 import mongoose, { Document, Schema } from "mongoose";
 
 export type EmailMessageStatus = "new" | "read" | "replied" | "archived";
+export type EmailMessageFolder = "inbox" | "dmarc";
 export type EmailMessageActivityType = "assigned" | "released" | "read" | "replied" | "status";
 
 export interface IEmailMessageActivity {
@@ -24,6 +25,7 @@ export interface IEmailMessage extends Document {
   preview: string;
   text: string;
   html?: string;
+  folder: EmailMessageFolder;
   status: EmailMessageStatus;
   isSeenOnServer: boolean;
   receivedAt: Date;
@@ -53,6 +55,11 @@ const EmailMessageSchema: Schema = new Schema(
     preview: { type: String, trim: true, default: "" },
     text: { type: String, default: "" },
     html: { type: String },
+    folder: {
+      type: String,
+      enum: ["inbox", "dmarc"],
+      default: "inbox",
+    },
     status: {
       type: String,
       enum: ["new", "read", "replied", "archived"],
@@ -86,6 +93,7 @@ EmailMessageSchema.index({ mailbox: 1, uid: 1 }, { unique: true, sparse: true })
 EmailMessageSchema.index({ mailbox: 1, messageId: 1 }, { sparse: true });
 EmailMessageSchema.index({ status: 1, receivedAt: -1 });
 EmailMessageSchema.index({ mailboxAddress: 1, receivedAt: -1 });
+EmailMessageSchema.index({ folder: 1, receivedAt: -1 });
 EmailMessageSchema.index({ assignedToEmail: 1, receivedAt: -1 });
 EmailMessageSchema.index({
   subject: "text",
@@ -96,3 +104,4 @@ EmailMessageSchema.index({
 });
 
 export default mongoose.model<IEmailMessage>("EmailMessage", EmailMessageSchema);
+
