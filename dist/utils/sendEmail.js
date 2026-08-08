@@ -77,9 +77,30 @@ const resolveSmtpConfig = (fromEmail) => {
 const stripHtml = (html = "") => html
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<\/(p|div|li|h[1-6]|tr)>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
+const escapeHtml = (value = "") => value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+const renderDirectSignature = (signature) => {
+    const cleanSignature = String(signature || "").trim();
+    if (!cleanSignature)
+        return "";
+    return `<p style="margin:24px 0 0;">Best regards,<br />${escapeHtml(cleanSignature).replace(/\n/g, "<br />")}</p>`;
+};
 const sendEmail = async (to, subject, htmlContent, attachmentsOrOptions) => {
     try {
         const options = Array.isArray(attachmentsOrOptions)
@@ -121,16 +142,17 @@ const sendEmail = async (to, subject, htmlContent, attachmentsOrOptions) => {
                 rateLimit: 5,
             });
         await transporter.verify();
-        const defaultFromEmail = process.env.SMTP_FROM_EMAIL ||
-            process.env.EMAIL_FROM ||
-            (smtpConfig === null || smtpConfig === void 0 ? void 0 : smtpConfig.fromEmail) ||
+        const defaultFromEmail = (smtpConfig === null || smtpConfig === void 0 ? void 0 : smtpConfig.fromEmail) ||
             (smtpConfig === null || smtpConfig === void 0 ? void 0 : smtpConfig.user) ||
+            process.env.SMTP_FROM_EMAIL ||
+            process.env.EMAIL_FROM ||
             process.env.SMTP_USER ||
             process.env.EMAIL_USER;
         const fromEmail = options.fromEmail || defaultFromEmail;
         const fromName = options.fromName || (smtpConfig === null || smtpConfig === void 0 ? void 0 : smtpConfig.fromName) || process.env.SMTP_FROM_NAME || "Creativa Poeta";
+        const directSignature = renderDirectSignature(options.signature);
         const html = options.wrap === false
-            ? htmlContent
+            ? `${htmlContent}${directSignature}`
             : (0, emailTemplate_1.renderBrandedEmail)({
                 title: options.title || subject,
                 preheader: options.preheader || stripHtml(htmlContent).slice(0, 130),
@@ -144,7 +166,9 @@ const sendEmail = async (to, subject, htmlContent, attachmentsOrOptions) => {
             bcc: options.bcc,
             subject,
             html,
-            text: stripHtml(htmlContent),
+            text: [stripHtml(htmlContent), options.signature ? `Best regards,\n${options.signature.trim()}` : ""]
+                .filter(Boolean)
+                .join("\n\n"),
             replyTo: options.replyTo || (options.fromEmail ? fromEmail : process.env.REPLY_TO_EMAIL || fromEmail),
             attachments: options.attachments,
         });

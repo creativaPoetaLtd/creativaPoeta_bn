@@ -3,10 +3,10 @@ import EmailMessage from "../models/EmailMessage";
 import OutboundEmail from "../models/OutboundEmail";
 import User from "../models/User";
 import { getEffectiveAdminRole } from "../middleware/authMiddleware";
-import { syncConfiguredMailboxes } from "../services/emailSyncService";
+import { setMessageSeenOnServer, syncConfiguredMailboxes } from "../services/emailSyncService";
 import sendEmail from "../utils/sendEmail";
 import { escapeHtml, formatParagraphs, renderQuotedEmailBlock } from "../utils/emailTemplate";
-import { DMARC_REPORT_FOLDER, dmarcReportMongoFilter } from "../utils/emailFilters";
+import { SPAM_FOLDER, spamMessageMongoFilter } from "../utils/emailFilters";
 
 const allowedStatuses = ["new", "read", "replied", "archived"];
 const MAX_ATTACHMENT_TOTAL_BYTES = 8 * 1024 * 1024;
@@ -20,8 +20,8 @@ const normalizeForwardSubject = (subject: string) =>
   /^(fw|fwd):/i.test(subject.trim()) ? subject.trim() : `Fwd: ${subject.trim() || "Forwarded message"}`;
 
 const applyInboundFolderFilter = (filter: any, folder: string) => {
-  if (folder === DMARC_REPORT_FOLDER) {
-    filter.folder = DMARC_REPORT_FOLDER;
+  if (folder === SPAM_FOLDER || folder === "dmarc") {
+    filter.folder = { $in: [SPAM_FOLDER, "dmarc"] };
     return;
   }
 
@@ -160,6 +160,25 @@ const applyInboundMailboxAccess = async (req: Request, filter: any) => {
 
 const applyOutboundOwnerAccess = (req: Request, filter: any) => {
   filter.createdByEmail = getAdminEmail(req);
+};
+
+const applyOutboundReadAccess = async (req: Request, filter: any, folder: "sent" | "draft") => {
+  if (folder === "draft") {
+    applyOutboundOwnerAccess(req, filter);
+    return;
+  }
+
+  const currentEmail = getAdminEmail(req);
+  const allowedAddresses = await getAllowedMailboxAddresses(req);
+  filter.$and = [
+    ...(filter.$and || []),
+    {
+      $or: [
+        { createdByEmail: currentEmail },
+        { fromEmail: { $in: allowedAddresses } },
+      ],
+    },
+  ];
 };
 
 const addEmailActivity = (email: any, req: Request, type: "assigned" | "released" | "read" | "replied" | "status", message?: string) => {
@@ -322,6 +341,7 @@ const sendOutboundPayload = async (
     title: payload.subject,
     preheader: payload.body.slice(0, 130),
     signature: payload.signature,
+    wrap: false,
     attachments: mailAttachments,
   });
 
@@ -340,18 +360,18 @@ export const syncEmails = async (req: Request, res: Response): Promise<void> => 
   try {
     const limit = Number(req.body?.limit || req.query.limit || 50);
     const result = await syncConfiguredMailboxes(limit);
-    const filteredDmarcReports = await EmailMessage.updateMany(
+    const filteredSpamMessages = await EmailMessage.updateMany(
       {
-        folder: { $ne: DMARC_REPORT_FOLDER },
-        ...dmarcReportMongoFilter,
+        folder: { $ne: SPAM_FOLDER },
+        ...spamMessageMongoFilter,
       },
-      { $set: { folder: DMARC_REPORT_FOLDER, status: "read" } }
+      { $set: { folder: SPAM_FOLDER, status: "read" } }
     );
 
     res.status(200).json({
       message: "Email sync completed",
       ...result,
-      filteredDmarcReports: filteredDmarcReports.modifiedCount || 0,
+      filteredSpamMessages: filteredSpamMessages.modifiedCount || 0,
     });
   } catch (error: any) {
     res.status(500).json({
@@ -527,7 +547,7 @@ export const getOutboundEmails = async (req: Request, res: Response): Promise<vo
     const folder = req.query.folder === "sent" ? "sent" : "draft";
     const search = String(req.query.search || "").trim();
     const filter: any = { folder };
-    applyOutboundOwnerAccess(req, filter);
+    await applyOutboundReadAccess(req, filter, folder);
 
     if (search) {
       filter.$or = [
@@ -585,6 +605,11 @@ export const getEmail = async (req: Request, res: Response): Promise<void> => {
       email.status = "read";
       addEmailActivity(email, req, "read", "Message ouvert");
       await email.save();
+
+      if (await setMessageSeenOnServer(email, true)) {
+        email.isSeenOnServer = true;
+        await email.save();
+      }
     }
 
     res.status(200).json({ message: "Email fetched successfully", email: await enrichEmailOwnerRole(email) });
@@ -847,6 +872,24 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
       title: replySubject,
       preheader: cleanMessage.slice(0, 130),
       signature: String(signature || "").trim(),
+      wrap: false,
+    });
+
+    await OutboundEmail.create({
+      to: [email.fromEmail],
+      cc: [],
+      bcc: [],
+      subject: replySubject,
+      body: cleanMessage,
+      signature: String(signature || "").trim(),
+      fromEmail: replyFromEmail,
+      folder: "sent",
+      status: "sent",
+      sentAt: new Date(),
+      createdBy: getAdminName(req),
+      createdByEmail: getAdminEmail(req),
+      updatedBy: getAdminName(req),
+      updatedByEmail: getAdminEmail(req),
     });
 
     if (!email.assignedToEmail) {
@@ -933,6 +976,7 @@ export const forwardEmail = async (req: Request, res: Response): Promise<void> =
       title: forwardSubject,
       preheader: cleanMessage.slice(0, 130),
       signature: payload.signature,
+      wrap: false,
       attachments: mailAttachments,
     });
 
@@ -982,6 +1026,15 @@ export const updateEmailStatus = async (req: Request, res: Response): Promise<vo
     if (email.status !== status) {
       email.status = status as any;
       addEmailActivity(email, req, "status", `Status changed to ${status}`);
+      await email.save();
+    }
+
+    const shouldBeSeenOnServer = status !== "new";
+    if (
+      email.isSeenOnServer !== shouldBeSeenOnServer &&
+      (await setMessageSeenOnServer(email, shouldBeSeenOnServer))
+    ) {
+      email.isSeenOnServer = shouldBeSeenOnServer;
       await email.save();
     }
 

@@ -1,7 +1,12 @@
-import { ImapFlow } from "imapflow";
+import { ImapFlow, ListResponse } from "imapflow";
 import { simpleParser, AddressObject } from "mailparser";
 import EmailMessage from "../models/EmailMessage";
-import { DMARC_REPORT_FOLDER, dmarcReportMongoFilter, isDmarcReport } from "../utils/emailFilters";
+import {
+  SPAM_FOLDER,
+  isDmarcReport,
+  isSpamMessage,
+  spamMessageMongoFilter,
+} from "../utils/emailFilters";
 
 interface MailboxConfig {
   key: string;
@@ -16,6 +21,8 @@ interface SyncMailboxResult {
   imported: number;
   updated: number;
   skipped: number;
+  folders: string[];
+  folderErrors?: Array<{ folder: string; error: string }>;
   error?: string;
 }
 
@@ -61,16 +68,14 @@ const getMailboxConfigs = (): MailboxConfig[] => {
     },
   ];
 
-  const extraConfigs = getExtraMailboxKeys().map((envKey) => {
-    return {
-      key: envKey.toLowerCase(),
-      address:
-        process.env[`IMAP_${envKey}_USER`] ||
-        process.env[`IMAP_${envKey}_ADDRESS`] ||
-        process.env[`IMAP_${envKey}_EMAIL`],
-      password: process.env[`IMAP_${envKey}_PASSWORD`],
-    };
-  });
+  const extraConfigs = getExtraMailboxKeys().map((envKey) => ({
+    key: envKey.toLowerCase(),
+    address:
+      process.env[`IMAP_${envKey}_USER`] ||
+      process.env[`IMAP_${envKey}_ADDRESS`] ||
+      process.env[`IMAP_${envKey}_EMAIL`],
+    password: process.env[`IMAP_${envKey}_PASSWORD`],
+  }));
 
   return [...baseConfigs, ...extraConfigs]
     .filter((config) => config.address && config.password)
@@ -80,6 +85,18 @@ const getMailboxConfigs = (): MailboxConfig[] => {
       password: config.password as string,
     }));
 };
+
+const createImapClient = (config: MailboxConfig) =>
+  new ImapFlow({
+    host: process.env.IMAP_HOST || "mail.infomaniak.com",
+    port: Number(process.env.IMAP_PORT || 993),
+    secure: process.env.IMAP_SECURE !== "false",
+    auth: {
+      user: config.address,
+      pass: config.password,
+    },
+    logger: false,
+  });
 
 const normalizeAddressList = (addresses?: AddressObject | AddressObject[]) => {
   const list = Array.isArray(addresses) ? addresses : addresses ? [addresses] : [];
@@ -95,21 +112,147 @@ const createPreview = (text = "", html = "") => {
   return source.replace(/\s+/g, " ").trim().slice(0, 260);
 };
 
+const normalizeFolderName = (value = "") =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+const excludedSpecialUses = new Set(["\\sent", "\\drafts", "\\trash", "\\all"]);
+const excludedFolderNames = /(^|[\/._ -])(sent|sent items|envoyes|brouillons|drafts|trash|corbeille|all mail)([\/._ -]|$)/i;
+
+const shouldSyncFolder = (folder: ListResponse) => {
+  if (folder.flags?.has("\\Noselect")) return false;
+  if (folder.specialUse && excludedSpecialUses.has(folder.specialUse.toLowerCase())) return false;
+  return !excludedFolderNames.test(normalizeFolderName(folder.path));
+};
+
+let emailIndexesReady: Promise<void> | undefined;
+
+const ensureEmailSourceIndexes = async () => {
+  if (!emailIndexesReady) {
+    emailIndexesReady = (async () => {
+      await EmailMessage.updateMany(
+        { $or: [{ sourceFolder: { $exists: false } }, { sourceFolder: "" }] },
+        { $set: { sourceFolder: "INBOX" } }
+      );
+      await EmailMessage.updateMany(
+        { folder: "dmarc" },
+        { $set: { folder: SPAM_FOLDER, status: "read" } }
+      );
+
+      const indexes = await EmailMessage.collection.indexes();
+      const legacyUidIndex = indexes.find((index: any) => {
+        const keys = Object.keys(index.key || {});
+        return index.unique && keys.length === 2 && index.key.mailbox === 1 && index.key.uid === 1;
+      });
+
+      if (legacyUidIndex?.name) {
+        await EmailMessage.collection.dropIndex(legacyUidIndex.name);
+      }
+
+      await EmailMessage.collection.createIndex(
+        { mailbox: 1, sourceFolder: 1, uid: 1 },
+        { unique: true, sparse: true, name: "mailbox_sourceFolder_uid_unique" }
+      );
+    })();
+  }
+
+  return emailIndexesReady;
+};
+
+const syncFolder = async (
+  client: ImapFlow,
+  config: MailboxConfig,
+  folder: ListResponse,
+  limit: number,
+  result: SyncMailboxResult
+) => {
+  const mailbox = await client.mailboxOpen(folder.path);
+  const exists = mailbox.exists || 0;
+  result.folders.push(folder.path);
+  if (!exists) return;
+
+  const start = Math.max(1, exists - limit + 1);
+  for await (const message of client.fetch(`${start}:*`, {
+    uid: true,
+    flags: true,
+    internalDate: true,
+    source: true,
+    envelope: true,
+  })) {
+    try {
+      const parsed = await simpleParser(message.source as any);
+      const from = parsed.from?.value?.[0];
+      const text = parsed.text || "";
+      const html = typeof parsed.html === "string" ? parsed.html : undefined;
+      const receivedAt =
+        parsed.date ||
+        (message.internalDate ? new Date(message.internalDate as any) : new Date());
+      const messageId = parsed.messageId || `${config.key}-${folder.path}-${message.uid}`;
+      const spamInput = {
+        fromName: from?.name || "",
+        fromEmail: from?.address || "",
+        subject: parsed.subject || "",
+        text,
+        html,
+        sourceFolder: folder.path,
+        sourceSpecialUse: folder.specialUse,
+      };
+      const isSpam = isSpamMessage(spamInput);
+      const serverSeen = Boolean(message.flags?.has("\\Seen"));
+      const payload = {
+        mailbox: config.key,
+        mailboxAddress: config.address.toLowerCase(),
+        uid: message.uid,
+        sourceFolder: folder.path,
+        sourceSpecialUse: folder.specialUse,
+        messageId,
+        fromName: from?.name || "",
+        fromEmail: from?.address?.toLowerCase() || "",
+        to: normalizeAddressList(parsed.to as AddressObject | AddressObject[] | undefined),
+        cc: normalizeAddressList(parsed.cc as AddressObject | AddressObject[] | undefined),
+        subject: parsed.subject || "(No subject)",
+        preview: createPreview(text, html),
+        text,
+        html,
+        folder: isSpam ? SPAM_FOLDER : "inbox",
+        status: isDmarcReport(spamInput) ? "read" : serverSeen ? "read" : "new",
+        isSeenOnServer: serverSeen,
+        receivedAt,
+        syncedAt: new Date(),
+        rawSize: Buffer.isBuffer(message.source) ? message.source.length : undefined,
+      };
+
+      const existing = await EmailMessage.findOne({
+        mailbox: config.key,
+        $or: [
+          { sourceFolder: folder.path, uid: message.uid },
+          { messageId },
+        ],
+      });
+
+      if (existing) {
+        // Once imported, CP Mail owns the workflow status. IMAP flags are
+        // mirrored separately and must never undo an admin's choice.
+        existing.set({ ...payload, status: existing.status });
+        await existing.save();
+        result.updated += 1;
+      } else {
+        await EmailMessage.create(payload);
+        result.imported += 1;
+      }
+    } catch {
+      result.skipped += 1;
+    }
+  }
+};
+
 const syncMailbox = async (
   config: MailboxConfig,
   limit: number
 ): Promise<SyncMailboxResult> => {
-  const client = new ImapFlow({
-    host: process.env.IMAP_HOST || "mail.infomaniak.com",
-    port: Number(process.env.IMAP_PORT || 993),
-    secure: process.env.IMAP_SECURE !== "false",
-    auth: {
-      user: config.address,
-      pass: config.password,
-    },
-    logger: false,
-  });
-
+  const client = createImapClient(config);
   const result: SyncMailboxResult = {
     mailbox: config.key,
     address: config.address,
@@ -117,96 +260,37 @@ const syncMailbox = async (
     imported: 0,
     updated: 0,
     skipped: 0,
+    folders: [],
   };
 
   try {
     await client.connect();
-    const mailbox = await client.mailboxOpen("INBOX");
-    const exists = mailbox.exists || 0;
+    const folders = (await client.list())
+      .filter(shouldSyncFolder)
+      .sort((left, right) => {
+        if (left.path.toUpperCase() === "INBOX") return -1;
+        if (right.path.toUpperCase() === "INBOX") return 1;
+        return left.path.localeCompare(right.path);
+      });
 
-    if (!exists) {
-      await client.logout();
-      return result;
-    }
-
-    const start = Math.max(1, exists - limit + 1);
-
-    for await (const message of client.fetch(`${start}:*`, {
-      uid: true,
-      flags: true,
-      internalDate: true,
-      source: true,
-      envelope: true,
-    })) {
+    for (const folder of folders) {
       try {
-        const parsed = await simpleParser(message.source as any);
-        const from = parsed.from?.value?.[0];
-        const text = parsed.text || "";
-        const html = typeof parsed.html === "string" ? parsed.html : undefined;
-        const receivedAt =
-          parsed.date ||
-          (message.internalDate ? new Date(message.internalDate as any) : new Date());
-
-        const isDmarc = isDmarcReport({
-          fromName: from?.name || "",
-          fromEmail: from?.address || "",
-          subject: parsed.subject || "",
-          text,
-          html,
-        });
-
-        const payload = {
-          mailbox: config.key,
-          mailboxAddress: config.address.toLowerCase(),
-          uid: message.uid,
-          messageId: parsed.messageId || `${config.key}-${message.uid}`,
-          fromName: from?.name || "",
-          fromEmail: from?.address?.toLowerCase() || "",
-          to: normalizeAddressList(parsed.to as AddressObject | AddressObject[] | undefined),
-          cc: normalizeAddressList(parsed.cc as AddressObject | AddressObject[] | undefined),
-          subject: parsed.subject || "(No subject)",
-          preview: createPreview(text, html),
-          text,
-          html,
-          folder: isDmarc ? DMARC_REPORT_FOLDER : "inbox",
-          status: isDmarc ? "read" : message.flags?.has("\\Seen") ? "read" : "new",
-          isSeenOnServer: Boolean(message.flags?.has("\\Seen")),
-          receivedAt,
-          syncedAt: new Date(),
-          rawSize: Buffer.isBuffer(message.source) ? message.source.length : undefined,
-        };
-
-        const existing = await EmailMessage.findOne({
-          mailbox: config.key,
-          uid: message.uid,
-        });
-
-        if (existing) {
-          existing.set({
-            ...payload,
-            status:
-              existing.status === "new" || existing.status === "read"
-                ? payload.status
-                : existing.status,
-          });
-          await existing.save();
-          result.updated += 1;
-        } else {
-          await EmailMessage.create(payload);
-          result.imported += 1;
-        }
-      } catch {
-        result.skipped += 1;
+        await syncFolder(client, config, folder, limit, result);
+      } catch (error: any) {
+        result.folderErrors = [
+          ...(result.folderErrors || []),
+          { folder: folder.path, error: error?.message || "Folder sync failed" },
+        ];
       }
     }
 
     await EmailMessage.updateMany(
       {
         mailbox: config.key,
-        folder: { $ne: DMARC_REPORT_FOLDER },
-        ...dmarcReportMongoFilter,
+        folder: { $ne: SPAM_FOLDER },
+        ...spamMessageMongoFilter,
       },
-      { $set: { folder: DMARC_REPORT_FOLDER, status: "read" } }
+      { $set: { folder: SPAM_FOLDER, status: "read" } }
     );
 
     await client.logout();
@@ -215,7 +299,7 @@ const syncMailbox = async (
     try {
       await client.logout();
     } catch {
-      // ignore logout errors after failed connections
+      // Ignore logout errors after failed connections.
     }
 
     return {
@@ -225,7 +309,42 @@ const syncMailbox = async (
   }
 };
 
+export const setMessageSeenOnServer = async (message: {
+  mailbox?: string;
+  mailboxAddress?: string;
+  sourceFolder?: string;
+  uid?: number;
+}, seen: boolean): Promise<boolean> => {
+  if (!message.uid) return false;
+
+  const mailbox = String(message.mailbox || "").toLowerCase();
+  const mailboxAddress = String(message.mailboxAddress || "").toLowerCase();
+  const config = getMailboxConfigs().find(
+    (candidate) => candidate.key === mailbox || candidate.address === mailboxAddress
+  );
+  if (!config) return false;
+
+  const client = createImapClient(config);
+  try {
+    await client.connect();
+    await client.mailboxOpen(message.sourceFolder || "INBOX");
+    const updated = seen
+      ? await client.messageFlagsAdd(message.uid, ["\\Seen"], { uid: true })
+      : await client.messageFlagsRemove(message.uid, ["\\Seen"], { uid: true });
+    await client.logout();
+    return updated;
+  } catch {
+    try {
+      await client.logout();
+    } catch {
+      // The local status remains authoritative when the IMAP server is unavailable.
+    }
+    return false;
+  }
+};
+
 export const syncConfiguredMailboxes = async (limit = 50): Promise<EmailSyncResult> => {
+  await ensureEmailSourceIndexes();
   const configs = getMailboxConfigs();
   const configuredKeys = new Set(configs.map((config) => config.key));
   const missing: SyncMailboxResult[] = ["be", "global"]
@@ -236,13 +355,13 @@ export const syncConfiguredMailboxes = async (limit = 50): Promise<EmailSyncResu
       imported: 0,
       updated: 0,
       skipped: 0,
+      folders: [],
       error: "IMAP credentials are not configured.",
     }));
 
   const syncResults = await Promise.all(
     configs.map((config) => syncMailbox(config, Math.max(1, Math.min(limit, 200))))
   );
-
   const results = [...syncResults, ...missing];
 
   return {
@@ -252,4 +371,3 @@ export const syncConfiguredMailboxes = async (limit = 50): Promise<EmailSyncResu
     skipped: results.reduce((total, item) => total + item.skipped, 0),
   };
 };
-

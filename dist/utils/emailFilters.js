@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.dmarcReportMongoFilter = exports.isDmarcReport = exports.DMARC_REPORT_FOLDER = void 0;
-exports.DMARC_REPORT_FOLDER = "dmarc";
+exports.spamMessageMongoFilter = exports.isSpamMessage = exports.isDmarcReport = exports.SPAM_FOLDER = void 0;
+exports.SPAM_FOLDER = "spam";
 const normalize = (value) => String(value || "").trim().toLowerCase();
 const isDmarcReport = (input) => {
     const fromEmail = normalize(input.fromEmail);
@@ -21,10 +21,47 @@ const isDmarcReport = (input) => {
     return false;
 };
 exports.isDmarcReport = isDmarcReport;
-exports.dmarcReportMongoFilter = {
+const getConfiguredSpamSenders = () => String(process.env.EMAIL_SPAM_SENDERS || "")
+    .split(/[,;\n]/)
+    .map(normalize)
+    .filter(Boolean);
+const getConfiguredSpamSubjects = () => String(process.env.EMAIL_SPAM_SUBJECTS || "")
+    .split(/[,;\n]/)
+    .map(normalize)
+    .filter(Boolean);
+const isSpamMessage = (input) => {
+    if ((0, exports.isDmarcReport)(input))
+        return true;
+    const fromEmail = normalize(input.fromEmail);
+    const fromName = normalize(input.fromName);
+    const subject = normalize(input.subject);
+    const sourceFolder = normalize(input.sourceFolder);
+    const sourceSpecialUse = normalize(input.sourceSpecialUse);
+    const senderDomain = fromEmail.split("@").pop() || "";
+    if (sourceSpecialUse === "\\junk")
+        return true;
+    if (/(^|[\/._ -])(spam|junk|promotions?|ind[eé]sirables?|courrier ind[eé]sirable)([\/._ -]|$)/i.test(sourceFolder)) {
+        return true;
+    }
+    // Infomaniak's automated reports are operational noise for CP Mail and are
+    // intentionally grouped with spam, as requested by the mailbox owner.
+    if (senderDomain === "infomaniak.com" || senderDomain.endsWith(".infomaniak.com"))
+        return true;
+    if (fromName.includes("infomaniak") && /(report|rapport|dmarc|security|securite|sécurité)/i.test(subject)) {
+        return true;
+    }
+    if (getConfiguredSpamSenders().some((entry) => fromEmail === entry || fromEmail.endsWith(`@${entry}`))) {
+        return true;
+    }
+    return getConfiguredSpamSubjects().some((entry) => subject.includes(entry));
+};
+exports.isSpamMessage = isSpamMessage;
+exports.spamMessageMongoFilter = {
     $or: [
+        { folder: "dmarc" },
         { fromEmail: { $regex: "dmarc", $options: "i" } },
         { fromName: { $regex: "dmarc", $options: "i" } },
+        { fromEmail: { $regex: "@([^.]+\\.)*infomaniak\\.com$", $options: "i" } },
         { subject: { $regex: "(dmarc aggregate report|report domain:|submitter:.*report-id)", $options: "i" } },
         { text: { $regex: "dmarc aggregate report", $options: "i" } },
     ],
