@@ -11,6 +11,7 @@ import emailRouter from "./emailRoutes";
 import adminNotificationRouter from "./adminNotificationRoutes";
 import internalMessageRouter from "./internalMessageRoutes";
 import partnershipRequestRouter from "./partnershipRequestRoutes";
+import analyticsRouter from "./analyticsRoutes";
 
 const router = express.Router();
 
@@ -25,6 +26,7 @@ router.use("/internal-messages", internalMessageRouter);
 router.use("/jobs", CareerRouter);
 router.use("/visibility-audit", visibilityAuditRouter);
 router.use("/partnership-requests", partnershipRequestRouter);
+router.use("/analytics", analyticsRouter);
 
 // Email test endpoint for debugging
 router.get("/test-email", testEmail);

@@ -52,6 +52,7 @@ const allPermissionKeys = [
     "users:manage",
     "internal:messages",
     "reports:read",
+    "analytics:read",
 ];
 const permissionCatalog = new Set(allPermissionKeys);
 const permissionsByRole = {
@@ -71,10 +72,11 @@ const permissionsByRole = {
         "jobs:manage",
         "internal:messages",
         "reports:read",
+        "analytics:read",
     ],
-    admin_2: ["dashboard:read", "requests:visibility", "email:read", "blogs:manage", "seo:manage", "internal:messages", "reports:read"],
+    admin_2: ["dashboard:read", "requests:visibility", "email:read", "blogs:manage", "seo:manage", "internal:messages", "reports:read", "analytics:read"],
     admin_3: ["dashboard:read", "requests:assistance", "contacts:read", "contacts:reply", "email:read", "email:send", "email:manage", "internal:messages"],
-    admin_4: ["dashboard:read", "internal:messages", "reports:read"],
+    admin_4: ["dashboard:read", "internal:messages", "reports:read", "analytics:read"],
     admin_5: ["dashboard:read", "email:read", "internal:messages"],
 };
 const PASSWORD_MIN_LENGTH = 8;
