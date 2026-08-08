@@ -192,6 +192,28 @@ const addEmailActivity = (email: any, req: Request, type: "assigned" | "released
   });
 };
 
+const syncSeenFlagInBackground = (email: any, seen: boolean) => {
+  const message = {
+    mailbox: email.mailbox,
+    mailboxAddress: email.mailboxAddress,
+    sourceFolder: email.sourceFolder,
+    uid: email.uid,
+  };
+  const emailId = email._id;
+
+  void setMessageSeenOnServer(message, seen)
+    .then(async (updated) => {
+      if (!updated) return;
+      await EmailMessage.updateOne(
+        { _id: emailId },
+        { $set: { isSeenOnServer: seen } }
+      );
+    })
+    .catch(() => {
+      // CP Mail's local workflow status remains authoritative if IMAP is unavailable.
+    });
+};
+
 const assignEmailToCurrentUser = (email: any, req: Request, message = "Ticket pris en charge") => {
   email.assignedToEmail = getAdminEmail(req);
   email.assignedToName = getAdminName(req);
@@ -605,11 +627,7 @@ export const getEmail = async (req: Request, res: Response): Promise<void> => {
       email.status = "read";
       addEmailActivity(email, req, "read", "Message ouvert");
       await email.save();
-
-      if (await setMessageSeenOnServer(email, true)) {
-        email.isSeenOnServer = true;
-        await email.save();
-      }
+      syncSeenFlagInBackground(email, true);
     }
 
     res.status(200).json({ message: "Email fetched successfully", email: await enrichEmailOwnerRole(email) });
@@ -1030,12 +1048,8 @@ export const updateEmailStatus = async (req: Request, res: Response): Promise<vo
     }
 
     const shouldBeSeenOnServer = status !== "new";
-    if (
-      email.isSeenOnServer !== shouldBeSeenOnServer &&
-      (await setMessageSeenOnServer(email, shouldBeSeenOnServer))
-    ) {
-      email.isSeenOnServer = shouldBeSeenOnServer;
-      await email.save();
+    if (email.isSeenOnServer !== shouldBeSeenOnServer) {
+      syncSeenFlagInBackground(email, shouldBeSeenOnServer);
     }
 
     res.status(200).json({ message: "Email status updated", email: await enrichEmailOwnerRole(email) });

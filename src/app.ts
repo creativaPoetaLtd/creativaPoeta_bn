@@ -20,6 +20,7 @@ app.use(
 app.use(express.json());
 
 app.get("/", (req, res) => {
+  res.setHeader("X-CP-Commit", process.env.VERCEL_GIT_COMMIT_SHA || "local");
   res.send("Creativa Poeta Backend is running ✅");
 });
 

@@ -60,6 +60,9 @@ const createImapClient = (config) => new imapflow_1.ImapFlow({
         user: config.address,
         pass: config.password,
     },
+    connectionTimeout: Number(process.env.IMAP_CONNECTION_TIMEOUT_MS || 10000),
+    greetingTimeout: Number(process.env.IMAP_GREETING_TIMEOUT_MS || 10000),
+    socketTimeout: Number(process.env.IMAP_SOCKET_TIMEOUT_MS || 20000),
     logger: false,
 });
 const normalizeAddressList = (addresses) => {

@@ -164,6 +164,24 @@ const addEmailActivity = (email, req, type, message) => {
         createdAt: new Date(),
     });
 };
+const syncSeenFlagInBackground = (email, seen) => {
+    const message = {
+        mailbox: email.mailbox,
+        mailboxAddress: email.mailboxAddress,
+        sourceFolder: email.sourceFolder,
+        uid: email.uid,
+    };
+    const emailId = email._id;
+    void (0, emailSyncService_1.setMessageSeenOnServer)(message, seen)
+        .then(async (updated) => {
+        if (!updated)
+            return;
+        await EmailMessage_1.default.updateOne({ _id: emailId }, { $set: { isSeenOnServer: seen } });
+    })
+        .catch(() => {
+        // CP Mail's local workflow status remains authoritative if IMAP is unavailable.
+    });
+};
 const assignEmailToCurrentUser = (email, req, message = "Ticket pris en charge") => {
     email.assignedToEmail = getAdminEmail(req);
     email.assignedToName = getAdminName(req);
@@ -537,10 +555,7 @@ const getEmail = async (req, res) => {
             email.status = "read";
             addEmailActivity(email, req, "read", "Message ouvert");
             await email.save();
-            if (await (0, emailSyncService_1.setMessageSeenOnServer)(email, true)) {
-                email.isSeenOnServer = true;
-                await email.save();
-            }
+            syncSeenFlagInBackground(email, true);
         }
         res.status(200).json({ message: "Email fetched successfully", email: await enrichEmailOwnerRole(email) });
     }
@@ -923,10 +938,8 @@ const updateEmailStatus = async (req, res) => {
             await email.save();
         }
         const shouldBeSeenOnServer = status !== "new";
-        if (email.isSeenOnServer !== shouldBeSeenOnServer &&
-            (await (0, emailSyncService_1.setMessageSeenOnServer)(email, shouldBeSeenOnServer))) {
-            email.isSeenOnServer = shouldBeSeenOnServer;
-            await email.save();
+        if (email.isSeenOnServer !== shouldBeSeenOnServer) {
+            syncSeenFlagInBackground(email, shouldBeSeenOnServer);
         }
         res.status(200).json({ message: "Email status updated", email: await enrichEmailOwnerRole(email) });
     }

@@ -18,6 +18,7 @@ app.use((0, cors_1.default)({
 }));
 app.use(express_1.default.json());
 app.get("/", (req, res) => {
+    res.setHeader("X-CP-Commit", process.env.VERCEL_GIT_COMMIT_SHA || "local");
     res.send("Creativa Poeta Backend is running ✅");
 });
 app.use("/api", routes_1.default);
