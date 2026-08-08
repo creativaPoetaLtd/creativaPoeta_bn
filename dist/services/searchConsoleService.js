@@ -213,8 +213,28 @@ const getSearchConsoleReport = async (from, to) => {
     }
     try {
         const accessToken = await getAccessToken(configuration.clientEmail, configuration.privateKey);
-        const properties = await Promise.all(configuration.siteUrls.map((siteUrl) => queryProperty(accessToken, siteUrl, startDate, endDate)));
-        const report = buildMergedReport(properties, startDate, endDate);
+        const propertyResults = await Promise.allSettled(configuration.siteUrls.map((siteUrl) => queryProperty(accessToken, siteUrl, startDate, endDate)));
+        const properties = propertyResults.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+        const propertyErrors = propertyResults.flatMap((result, index) => {
+            var _a;
+            return result.status === "rejected"
+                ? [{
+                        siteUrl: configuration.siteUrls[index],
+                        message: String(((_a = result.reason) === null || _a === void 0 ? void 0 : _a.message) || result.reason || "Search Console query failed.").slice(0, 240),
+                    }]
+                : [];
+        });
+        if (!properties.length) {
+            throw new Error(propertyErrors.map((item) => `${item.siteUrl}: ${item.message}`).join(" | ") ||
+                "No Search Console property could be queried.");
+        }
+        const report = {
+            ...buildMergedReport(properties, startDate, endDate),
+            propertyErrors,
+            warning: propertyErrors.length
+                ? `${propertyErrors.length} Search Console propert${propertyErrors.length === 1 ? "y" : "ies"} could not be refreshed.`
+                : undefined,
+        };
         const fetchedAt = new Date();
         const configuredMinutes = Number(process.env.GSC_CACHE_MINUTES || DEFAULT_CACHE_MINUTES);
         const cacheMinutes = Number.isFinite(configuredMinutes)

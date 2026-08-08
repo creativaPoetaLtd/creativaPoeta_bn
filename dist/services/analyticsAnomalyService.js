@@ -238,7 +238,7 @@ const upsertDetectedIncidents = async (detected, now) => {
             .lean();
         const remainsAcknowledged = (existing === null || existing === void 0 ? void 0 : existing.status) === "acknowledged";
         return AnalyticsIncident_1.default.updateOne({ fingerprint: incident.fingerprint }, {
-            $setOnInsert: { firstDetectedAt: now, occurrences: 0 },
+            $setOnInsert: { firstDetectedAt: now },
             $set: {
                 ...incident,
                 status: remainsAcknowledged ? "acknowledged" : "open",

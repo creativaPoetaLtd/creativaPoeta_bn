@@ -291,7 +291,7 @@ const upsertDetectedIncidents = async (detected: DetectedIncident[], now: Date) 
       return AnalyticsIncident.updateOne(
         { fingerprint: incident.fingerprint },
         {
-          $setOnInsert: { firstDetectedAt: now, occurrences: 0 },
+          $setOnInsert: { firstDetectedAt: now },
           $set: {
             ...incident,
             status: remainsAcknowledged ? "acknowledged" : "open",
