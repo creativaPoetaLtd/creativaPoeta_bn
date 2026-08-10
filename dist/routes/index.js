@@ -19,6 +19,8 @@ const partnershipRequestRoutes_1 = __importDefault(require("./partnershipRequest
 const analyticsRoutes_1 = __importDefault(require("./analyticsRoutes"));
 const healthRoutes_1 = __importDefault(require("./healthRoutes"));
 const referralProgramRoutes_1 = __importDefault(require("./referralProgramRoutes"));
+const authMiddleware_1 = require("../middleware/authMiddleware");
+const permissionMiddleware_1 = require("../middleware/permissionMiddleware");
 const router = express_1.default.Router();
 router.use("/auth", authRoutes_1.default);
 router.use("/blogs", BlogRoutes_1.default);
@@ -35,5 +37,5 @@ router.use("/referral-program", referralProgramRoutes_1.default);
 router.use("/analytics", analyticsRoutes_1.default);
 router.use("/health", healthRoutes_1.default);
 // Email test endpoint for debugging
-router.get("/test-email", emailTestController_1.testEmail);
+router.get("/test-email", authMiddleware_1.authenticateUser, (0, permissionMiddleware_1.authorizeAdminPermission)("referrals:settings"), emailTestController_1.testEmail);
 exports.default = router;

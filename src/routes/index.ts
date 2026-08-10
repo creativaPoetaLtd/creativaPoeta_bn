@@ -14,6 +14,8 @@ import partnershipRequestRouter from "./partnershipRequestRoutes";
 import analyticsRouter from "./analyticsRoutes";
 import healthRouter from "./healthRoutes";
 import referralProgramRouter from "./referralProgramRoutes";
+import { authenticateUser } from "../middleware/authMiddleware";
+import { authorizeAdminPermission } from "../middleware/permissionMiddleware";
 
 const router = express.Router();
 
@@ -33,6 +35,6 @@ router.use("/analytics", analyticsRouter);
 router.use("/health", healthRouter);
 
 // Email test endpoint for debugging
-router.get("/test-email", testEmail);
+router.get("/test-email", authenticateUser, authorizeAdminPermission("referrals:settings"), testEmail);
 
 export default router;
