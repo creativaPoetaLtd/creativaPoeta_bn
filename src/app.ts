@@ -9,6 +9,9 @@ dotenv.config();
 
 const app = express();
 
+app.disable("x-powered-by");
+app.set("trust proxy", 1);
+
 // Allow all CORS requests - no restrictions
 app.use(
   cors({
@@ -20,7 +23,12 @@ app.use(
 );
 
 app.use(analyticsServerMiddleware);
-app.use(express.json());
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  next();
+});
+app.use(express.json({ limit: "64kb", strict: true }));
 
 app.get("/", (req, res) => {
   res.setHeader("X-CP-Commit", process.env.VERCEL_GIT_COMMIT_SHA || "local");

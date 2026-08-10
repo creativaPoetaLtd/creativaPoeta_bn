@@ -11,6 +11,8 @@ const errorHandler_1 = __importDefault(require("./middleware/errorHandler"));
 const analyticsServerMiddleware_1 = require("./middleware/analyticsServerMiddleware");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
+app.disable("x-powered-by");
+app.set("trust proxy", 1);
 // Allow all CORS requests - no restrictions
 app.use((0, cors_1.default)({
     origin: "*", // Allow all origins
@@ -19,7 +21,12 @@ app.use((0, cors_1.default)({
     credentials: false, // Set to false when using origin: "*"
 }));
 app.use(analyticsServerMiddleware_1.analyticsServerMiddleware);
-app.use(express_1.default.json());
+app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    next();
+});
+app.use(express_1.default.json({ limit: "64kb", strict: true }));
 app.get("/", (req, res) => {
     res.setHeader("X-CP-Commit", process.env.VERCEL_GIT_COMMIT_SHA || "local");
     res.send("Creativa Poeta Backend is running ✅");

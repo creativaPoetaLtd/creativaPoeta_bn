@@ -13,6 +13,7 @@ import internalMessageRouter from "./internalMessageRoutes";
 import partnershipRequestRouter from "./partnershipRequestRoutes";
 import analyticsRouter from "./analyticsRoutes";
 import healthRouter from "./healthRoutes";
+import referralProgramRouter from "./referralProgramRoutes";
 
 const router = express.Router();
 
@@ -27,6 +28,7 @@ router.use("/internal-messages", internalMessageRouter);
 router.use("/jobs", CareerRouter);
 router.use("/visibility-audit", visibilityAuditRouter);
 router.use("/partnership-requests", partnershipRequestRouter);
+router.use("/referral-program", referralProgramRouter);
 router.use("/analytics", analyticsRouter);
 router.use("/health", healthRouter);
 

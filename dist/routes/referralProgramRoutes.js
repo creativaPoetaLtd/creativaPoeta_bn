@@ -1,0 +1,34 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const referralProgramController_1 = require("../controllers/referralProgramController");
+const authMiddleware_1 = require("../middleware/authMiddleware");
+const permissionMiddleware_1 = require("../middleware/permissionMiddleware");
+const router = express_1.default.Router();
+router.use((_req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    next();
+});
+const canRead = (0, permissionMiddleware_1.authorizeAdminPermission)("referrals:read", ["admin_1", "admin_4"]);
+const canManage = (0, permissionMiddleware_1.authorizeAdminPermission)("referrals:manage", ["admin_1"]);
+const canApprovePartners = (0, permissionMiddleware_1.authorizeAdminPermission)("partners:approve", ["admin_1"]);
+const canReadRewards = (0, permissionMiddleware_1.authorizeAdminPermission)("rewards:read", ["admin_1", "admin_4"]);
+const canApproveRewards = (0, permissionMiddleware_1.authorizeAdminPermission)("rewards:approve", ["admin_0"]);
+const canPayRewards = (0, permissionMiddleware_1.authorizeAdminPermission)("rewards:pay", ["admin_0"]);
+router.post("/partners", referralProgramController_1.applyToReferralProgram);
+router.post("/leads", referralProgramController_1.submitReferralLead);
+router.post("/prospect-referrals", referralProgramController_1.submitProspectReferral);
+router.get("/summary", authMiddleware_1.authenticateUser, canRead, referralProgramController_1.getReferralProgramSummary);
+router.get("/partners", authMiddleware_1.authenticateUser, canRead, referralProgramController_1.getReferralPartners);
+router.patch("/partners/:id", authMiddleware_1.authenticateUser, canApprovePartners, referralProgramController_1.updateReferralPartner);
+router.get("/leads", authMiddleware_1.authenticateUser, canRead, referralProgramController_1.getReferralLeads);
+router.patch("/leads/:id", authMiddleware_1.authenticateUser, canManage, referralProgramController_1.updateReferralLead);
+router.post("/leads/:id/claim", authMiddleware_1.authenticateUser, canManage, referralProgramController_1.claimReferralLead);
+router.get("/rewards", authMiddleware_1.authenticateUser, canReadRewards, referralProgramController_1.getReferralRewards);
+router.put("/leads/:leadId/reward", authMiddleware_1.authenticateUser, canApproveRewards, referralProgramController_1.upsertReferralReward);
+router.patch("/rewards/:id/status", authMiddleware_1.authenticateUser, canApproveRewards, referralProgramController_1.updateReferralRewardStatus);
+router.patch("/rewards/:id/pay", authMiddleware_1.authenticateUser, canPayRewards, referralProgramController_1.markReferralRewardPaid);
+exports.default = router;
