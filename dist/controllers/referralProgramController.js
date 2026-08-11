@@ -138,7 +138,7 @@ const applyToReferralProgram = async (req, res, next) => {
 };
 exports.applyToReferralProgram = applyToReferralProgram;
 const submitReferralLead = async (req, res, next) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
     try {
         if (clean((_a = req.body) === null || _a === void 0 ? void 0 : _a.websiteConfirmation, 200)) {
             res.status(201).json({ message: "Referral received.", status: "submitted" });
@@ -155,20 +155,21 @@ const submitReferralLead = async (req, res, next) => {
             res.status(403).json({ message: "The partner access link is invalid or inactive." });
             return;
         }
-        const companyName = clean((_d = req.body) === null || _d === void 0 ? void 0 : _d.companyName, 220);
-        const contactName = clean((_e = req.body) === null || _e === void 0 ? void 0 : _e.contactName, 200);
-        const contactEmail = cleanEmail((_f = req.body) === null || _f === void 0 ? void 0 : _f.contactEmail);
-        const contactPhone = clean((_g = req.body) === null || _g === void 0 ? void 0 : _g.contactPhone, 80);
-        const website = clean((_h = req.body) === null || _h === void 0 ? void 0 : _h.website, 500).toLowerCase();
-        const serviceNeeded = clean((_j = req.body) === null || _j === void 0 ? void 0 : _j.serviceNeeded, 200);
-        const budgetRange = clean((_k = req.body) === null || _k === void 0 ? void 0 : _k.budgetRange, 100);
-        const needDescription = clean((_l = req.body) === null || _l === void 0 ? void 0 : _l.needDescription, 3000);
-        const relationship = clean((_m = req.body) === null || _m === void 0 ? void 0 : _m.relationship, 200);
-        const consentStatus = ((_o = req.body) === null || _o === void 0 ? void 0 : _o.consentStatus) === "agreed" ? "agreed" : "not_yet";
-        const introductionMethod = clean((_p = req.body) === null || _p === void 0 ? void 0 : _p.introductionMethod, 120);
-        const introductionDetails = clean((_q = req.body) === null || _q === void 0 ? void 0 : _q.introductionDetails, 1500);
-        const locale = clean((_r = req.body) === null || _r === void 0 ? void 0 : _r.locale, 12) || partner.locale || "fr";
-        if (!companyName || !contactName || !serviceNeeded || !needDescription || !relationship || !introductionMethod) {
+        const clientType = ((_d = req.body) === null || _d === void 0 ? void 0 : _d.clientType) === "person" ? "person" : "company";
+        const companyName = clean((_e = req.body) === null || _e === void 0 ? void 0 : _e.companyName, 220);
+        const contactName = clean((_f = req.body) === null || _f === void 0 ? void 0 : _f.contactName, 200);
+        const contactEmail = cleanEmail((_g = req.body) === null || _g === void 0 ? void 0 : _g.contactEmail);
+        const contactPhone = clean((_h = req.body) === null || _h === void 0 ? void 0 : _h.contactPhone, 80);
+        const website = clean((_j = req.body) === null || _j === void 0 ? void 0 : _j.website, 500).toLowerCase();
+        const serviceNeeded = clean((_k = req.body) === null || _k === void 0 ? void 0 : _k.serviceNeeded, 200);
+        const budgetRange = clean((_l = req.body) === null || _l === void 0 ? void 0 : _l.budgetRange, 100);
+        const needDescription = clean((_m = req.body) === null || _m === void 0 ? void 0 : _m.needDescription, 3000);
+        const relationship = clean((_o = req.body) === null || _o === void 0 ? void 0 : _o.relationship, 200);
+        const consentStatus = ((_p = req.body) === null || _p === void 0 ? void 0 : _p.consentStatus) === "agreed" ? "agreed" : "not_yet";
+        const introductionMethod = clean((_q = req.body) === null || _q === void 0 ? void 0 : _q.introductionMethod, 120) || "partner_private_form";
+        const introductionDetails = clean((_r = req.body) === null || _r === void 0 ? void 0 : _r.introductionDetails, 1500);
+        const locale = clean((_s = req.body) === null || _s === void 0 ? void 0 : _s.locale, 12) || partner.locale || "fr";
+        if ((clientType === "company" && !companyName) || !contactName || !serviceNeeded || !relationship) {
             res.status(400).json({ message: "Required referral fields are missing." });
             return;
         }
@@ -183,9 +184,14 @@ const submitReferralLead = async (req, res, next) => {
         const duplicateFilters = [];
         if (contactEmail)
             duplicateFilters.push({ contactEmail });
+        if (contactPhone)
+            duplicateFilters.push({ contactPhone });
         if (website)
             duplicateFilters.push({ website });
-        duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+        if (companyName)
+            duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+        if (clientType === "person")
+            duplicateFilters.push({ clientType: "person", contactName: new RegExp(`^${escapeRegex(contactName)}$`, "i") });
         const possibleDuplicate = await ReferralLead_1.default.findOne({ $or: duplicateFilters }).select("_id");
         const initialStatus = consentStatus === "agreed" ? (possibleDuplicate ? "under_review" : "submitted") : "waiting_for_introduction";
         const lead = await ReferralLead_1.default.create({
@@ -194,6 +200,7 @@ const submitReferralLead = async (req, res, next) => {
             partnerName: partner.name,
             partnerEmail: partner.email,
             partnerPhone: partner.phone,
+            clientType,
             companyName,
             contactName,
             contactEmail,
@@ -215,9 +222,10 @@ const submitReferralLead = async (req, res, next) => {
         });
         if (partner.status === "approved")
             partner.status = "active";
-        partner.activity.push({ type: "note", message: `Referral submitted for ${companyName}`, at: new Date() });
+        const clientLabel = companyName || contactName;
+        partner.activity.push({ type: "note", message: `Referral submitted for ${clientLabel}`, at: new Date() });
         await partner.save();
-        const emailSent = await sendAdminNotice(`New referral - ${companyName}`, `<h2>New CPRPP referral</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Company:</strong> ${escapeHtml(companyName)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)}</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p><p><strong>Consent:</strong> ${escapeHtml(consentStatus)}</p>`);
+        const emailSent = await sendAdminNotice(`New referral - ${clientLabel}`, `<h2>New client introduction</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Client type:</strong> ${escapeHtml(clientType)}</p><p><strong>Client:</strong> ${escapeHtml(clientLabel)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)}</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p><p><strong>Consent:</strong> ${escapeHtml(consentStatus)}</p>`);
         res.status(201).json({ leadId: lead._id, status: lead.status, emailSent });
     }
     catch (error) {
@@ -226,7 +234,7 @@ const submitReferralLead = async (req, res, next) => {
 };
 exports.submitReferralLead = submitReferralLead;
 const submitDirectReferral = async (req, res, next) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y;
     try {
         if (clean((_a = req.body) === null || _a === void 0 ? void 0 : _a.websiteConfirmation, 200)) {
             res.status(201).json({ message: "Introduction received.", status: "submitted" });
@@ -245,23 +253,24 @@ const submitDirectReferral = async (req, res, next) => {
         const referrerWebsite = clean((_h = req.body) === null || _h === void 0 ? void 0 : _h.referrerWebsite, 500);
         const locale = clean((_j = req.body) === null || _j === void 0 ? void 0 : _j.locale, 12) || "fr";
         const termsAccepted = ((_k = req.body) === null || _k === void 0 ? void 0 : _k.termsAccepted) === true;
-        const companyName = clean((_l = req.body) === null || _l === void 0 ? void 0 : _l.companyName, 220);
-        const contactName = clean((_m = req.body) === null || _m === void 0 ? void 0 : _m.contactName, 200);
-        const contactEmail = cleanEmail((_o = req.body) === null || _o === void 0 ? void 0 : _o.contactEmail);
-        const contactPhone = clean((_p = req.body) === null || _p === void 0 ? void 0 : _p.contactPhone, 80);
-        const website = clean((_q = req.body) === null || _q === void 0 ? void 0 : _q.website, 500).toLowerCase();
-        const serviceNeeded = clean((_r = req.body) === null || _r === void 0 ? void 0 : _r.serviceNeeded, 200);
-        const budgetRange = clean((_s = req.body) === null || _s === void 0 ? void 0 : _s.budgetRange, 100);
-        const needDescription = clean((_t = req.body) === null || _t === void 0 ? void 0 : _t.needDescription, 3000);
-        const relationship = clean((_u = req.body) === null || _u === void 0 ? void 0 : _u.relationship, 200);
-        const consentStatus = ((_v = req.body) === null || _v === void 0 ? void 0 : _v.consentStatus) === "agreed" ? "agreed" : "not_yet";
-        const introductionMethod = clean((_w = req.body) === null || _w === void 0 ? void 0 : _w.introductionMethod, 120);
-        const introductionDetails = clean((_x = req.body) === null || _x === void 0 ? void 0 : _x.introductionDetails, 1500);
+        const clientType = ((_l = req.body) === null || _l === void 0 ? void 0 : _l.clientType) === "person" ? "person" : "company";
+        const companyName = clean((_m = req.body) === null || _m === void 0 ? void 0 : _m.companyName, 220);
+        const contactName = clean((_o = req.body) === null || _o === void 0 ? void 0 : _o.contactName, 200);
+        const contactEmail = cleanEmail((_p = req.body) === null || _p === void 0 ? void 0 : _p.contactEmail);
+        const contactPhone = clean((_q = req.body) === null || _q === void 0 ? void 0 : _q.contactPhone, 80);
+        const website = clean((_r = req.body) === null || _r === void 0 ? void 0 : _r.website, 500).toLowerCase();
+        const serviceNeeded = clean((_s = req.body) === null || _s === void 0 ? void 0 : _s.serviceNeeded, 200);
+        const budgetRange = clean((_t = req.body) === null || _t === void 0 ? void 0 : _t.budgetRange, 100);
+        const needDescription = clean((_u = req.body) === null || _u === void 0 ? void 0 : _u.needDescription, 3000);
+        const relationship = clean((_v = req.body) === null || _v === void 0 ? void 0 : _v.relationship, 200);
+        const consentStatus = ((_w = req.body) === null || _w === void 0 ? void 0 : _w.consentStatus) === "agreed" ? "agreed" : "not_yet";
+        const introductionMethod = clean((_x = req.body) === null || _x === void 0 ? void 0 : _x.introductionMethod, 120) || "direct_introduction_form";
+        const introductionDetails = clean((_y = req.body) === null || _y === void 0 ? void 0 : _y.introductionDetails, 1500);
         if (!referrerName || (!referrerEmail && !referrerPhone) || (referrerEmail && !emailIsValid(referrerEmail)) || !referrerCountry || !termsAccepted) {
             res.status(400).json({ message: "Your required details and acceptance of the program terms are missing." });
             return;
         }
-        if (!companyName || !contactName || !serviceNeeded || !needDescription || !relationship || !introductionMethod) {
+        if ((clientType === "company" && !companyName) || !contactName || !serviceNeeded || !relationship) {
             res.status(400).json({ message: "Required client introduction fields are missing." });
             return;
         }
@@ -315,9 +324,14 @@ const submitDirectReferral = async (req, res, next) => {
         const duplicateFilters = [];
         if (contactEmail)
             duplicateFilters.push({ contactEmail });
+        if (contactPhone)
+            duplicateFilters.push({ contactPhone });
         if (website)
             duplicateFilters.push({ website });
-        duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+        if (companyName)
+            duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+        if (clientType === "person")
+            duplicateFilters.push({ clientType: "person", contactName: new RegExp(`^${escapeRegex(contactName)}$`, "i") });
         const possibleDuplicate = await ReferralLead_1.default.findOne({ $or: duplicateFilters }).select("_id");
         const initialStatus = consentStatus === "agreed"
             ? (possibleDuplicate ? "under_review" : "submitted")
@@ -328,6 +342,7 @@ const submitDirectReferral = async (req, res, next) => {
             partnerName: partner.name,
             partnerEmail: partner.email,
             partnerPhone: partner.phone,
+            clientType,
             companyName,
             contactName,
             contactEmail,
@@ -349,9 +364,10 @@ const submitDirectReferral = async (req, res, next) => {
         });
         if (partner.status === "approved")
             partner.status = "active";
-        partner.activity.push({ type: "note", message: `Client introduction submitted for ${companyName}`, at: new Date() });
+        const clientLabel = companyName || contactName;
+        partner.activity.push({ type: "note", message: `Client introduction submitted for ${clientLabel}`, at: new Date() });
         await partner.save();
-        const emailSent = await sendAdminNotice(`New direct client introduction - ${companyName}`, `<h2>New client introduction and program registration</h2><p><strong>Introducer:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Introducer contact:</strong> ${escapeHtml(partner.email || partner.phone || "Not provided")}</p><p><strong>Company:</strong> ${escapeHtml(companyName)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)}</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p><p><strong>Consent:</strong> ${escapeHtml(consentStatus)}</p>`);
+        const emailSent = await sendAdminNotice(`New direct client introduction - ${clientLabel}`, `<h2>New client introduction and program registration</h2><p><strong>Introducer:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Introducer contact:</strong> ${escapeHtml(partner.email || partner.phone || "Not provided")}</p><p><strong>Client type:</strong> ${escapeHtml(clientType)}</p><p><strong>Client:</strong> ${escapeHtml(clientLabel)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)}</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p><p><strong>Consent:</strong> ${escapeHtml(consentStatus)}</p>`);
         res.status(201).json({
             leadId: lead._id,
             status: lead.status,
@@ -366,7 +382,7 @@ const submitDirectReferral = async (req, res, next) => {
 };
 exports.submitDirectReferral = submitDirectReferral;
 const submitProspectReferral = async (req, res, next) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
     try {
         if (clean((_a = req.body) === null || _a === void 0 ? void 0 : _a.websiteConfirmation, 200)) {
             res.status(201).json({ message: "Request received.", status: "submitted" });
@@ -382,20 +398,29 @@ const submitProspectReferral = async (req, res, next) => {
             res.status(404).json({ message: "This referral invitation is invalid or inactive." });
             return;
         }
-        const companyName = clean((_c = req.body) === null || _c === void 0 ? void 0 : _c.companyName, 220);
-        const contactName = clean((_d = req.body) === null || _d === void 0 ? void 0 : _d.contactName, 200);
-        const contactEmail = cleanEmail((_e = req.body) === null || _e === void 0 ? void 0 : _e.contactEmail);
-        const contactPhone = clean((_f = req.body) === null || _f === void 0 ? void 0 : _f.contactPhone, 80);
-        const website = clean((_g = req.body) === null || _g === void 0 ? void 0 : _g.website, 500).toLowerCase();
-        const serviceNeeded = clean((_h = req.body) === null || _h === void 0 ? void 0 : _h.serviceNeeded, 200);
-        const budgetRange = clean((_j = req.body) === null || _j === void 0 ? void 0 : _j.budgetRange, 100);
-        const needDescription = clean((_k = req.body) === null || _k === void 0 ? void 0 : _k.needDescription, 3000);
-        const locale = clean((_l = req.body) === null || _l === void 0 ? void 0 : _l.locale, 12) || "fr";
-        if (!companyName || !contactName || !emailIsValid(contactEmail) || !serviceNeeded || !needDescription || ((_m = req.body) === null || _m === void 0 ? void 0 : _m.contactConsent) !== true) {
+        const clientType = ((_c = req.body) === null || _c === void 0 ? void 0 : _c.clientType) === "person" ? "person" : "company";
+        const companyName = clean((_d = req.body) === null || _d === void 0 ? void 0 : _d.companyName, 220);
+        const contactName = clean((_e = req.body) === null || _e === void 0 ? void 0 : _e.contactName, 200);
+        const contactEmail = cleanEmail((_f = req.body) === null || _f === void 0 ? void 0 : _f.contactEmail);
+        const contactPhone = clean((_g = req.body) === null || _g === void 0 ? void 0 : _g.contactPhone, 80);
+        const website = clean((_h = req.body) === null || _h === void 0 ? void 0 : _h.website, 500).toLowerCase();
+        const serviceNeeded = clean((_j = req.body) === null || _j === void 0 ? void 0 : _j.serviceNeeded, 200);
+        const budgetRange = clean((_k = req.body) === null || _k === void 0 ? void 0 : _k.budgetRange, 100);
+        const needDescription = clean((_l = req.body) === null || _l === void 0 ? void 0 : _l.needDescription, 3000);
+        const locale = clean((_m = req.body) === null || _m === void 0 ? void 0 : _m.locale, 12) || "fr";
+        if ((clientType === "company" && !companyName) || !contactName || (!contactEmail && !contactPhone) || (contactEmail && !emailIsValid(contactEmail)) || !serviceNeeded || ((_o = req.body) === null || _o === void 0 ? void 0 : _o.contactConsent) !== true) {
             res.status(400).json({ message: "Required fields and permission to contact you are missing." });
             return;
         }
-        const duplicateFilters = [{ contactEmail }, { companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") }];
+        const duplicateFilters = [];
+        if (contactEmail)
+            duplicateFilters.push({ contactEmail });
+        if (contactPhone)
+            duplicateFilters.push({ contactPhone });
+        if (companyName)
+            duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+        if (clientType === "person")
+            duplicateFilters.push({ clientType: "person", contactName: new RegExp(`^${escapeRegex(contactName)}$`, "i") });
         if (website)
             duplicateFilters.push({ website });
         const possibleDuplicate = await ReferralLead_1.default.findOne({ $or: duplicateFilters }).select("_id");
@@ -405,6 +430,7 @@ const submitProspectReferral = async (req, res, next) => {
             partnerName: partner.name,
             partnerEmail: partner.email,
             partnerPhone: partner.phone,
+            clientType,
             companyName,
             contactName,
             contactEmail,
@@ -426,9 +452,10 @@ const submitProspectReferral = async (req, res, next) => {
         });
         if (partner.status === "approved")
             partner.status = "active";
-        partner.activity.push({ type: "note", message: `Prospect referral received for ${companyName}`, at: new Date() });
+        const clientLabel = companyName || contactName;
+        partner.activity.push({ type: "note", message: `Prospect referral received for ${clientLabel}`, at: new Date() });
         await partner.save();
-        const emailSent = await sendAdminNotice(`New prospect-confirmed referral - ${companyName}`, `<h2>New prospect-confirmed CPRPP referral</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Company:</strong> ${escapeHtml(companyName)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)} (${escapeHtml(contactEmail)})</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p>`);
+        const emailSent = await sendAdminNotice(`New prospect-confirmed referral - ${clientLabel}`, `<h2>New prospect-confirmed client introduction</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Client type:</strong> ${escapeHtml(clientType)}</p><p><strong>Client:</strong> ${escapeHtml(clientLabel)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)} (${escapeHtml(contactEmail || contactPhone)})</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p>`);
         res.status(201).json({ leadId: lead._id, status: lead.status, emailSent });
     }
     catch (error) {
@@ -437,7 +464,7 @@ const submitProspectReferral = async (req, res, next) => {
 };
 exports.submitProspectReferral = submitProspectReferral;
 const createManualReferralEntry = async (req, res) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4;
     try {
         const existingPartnerId = clean((_a = req.body) === null || _a === void 0 ? void 0 : _a.existingPartnerId, 40).toUpperCase();
         const approveNow = ((_b = req.body) === null || _b === void 0 ? void 0 : _b.approveNow) === true;
@@ -517,17 +544,18 @@ const createManualReferralEntry = async (req, res) => {
         }
         let lead = null;
         if (includeClient) {
-            const companyName = clean((_r = req.body) === null || _r === void 0 ? void 0 : _r.companyName, 220);
-            const contactName = clean((_s = req.body) === null || _s === void 0 ? void 0 : _s.contactName, 200);
-            const contactEmail = cleanEmail((_t = req.body) === null || _t === void 0 ? void 0 : _t.contactEmail);
-            const contactPhone = cleanPhone((_u = req.body) === null || _u === void 0 ? void 0 : _u.contactPhone);
-            const website = clean((_v = req.body) === null || _v === void 0 ? void 0 : _v.clientWebsite, 500).toLowerCase();
-            const serviceNeeded = clean((_w = req.body) === null || _w === void 0 ? void 0 : _w.serviceNeeded, 200);
-            const needDescription = clean((_x = req.body) === null || _x === void 0 ? void 0 : _x.needDescription, 3000);
-            const relationship = clean((_y = req.body) === null || _y === void 0 ? void 0 : _y.relationship, 200) || "Recorded by Creativa Poeta from an external contact channel";
-            const introductionMethod = clean((_z = req.body) === null || _z === void 0 ? void 0 : _z.introductionMethod, 120) || "manual_admin_entry";
-            const consentStatus = ((_0 = req.body) === null || _0 === void 0 ? void 0 : _0.consentStatus) === "agreed" ? "agreed" : "not_yet";
-            if (!companyName || !contactName || (!contactEmail && !contactPhone) || (contactEmail && !emailIsValid(contactEmail)) || !serviceNeeded || !needDescription) {
+            const clientType = ((_r = req.body) === null || _r === void 0 ? void 0 : _r.clientType) === "person" ? "person" : "company";
+            const companyName = clean((_s = req.body) === null || _s === void 0 ? void 0 : _s.companyName, 220);
+            const contactName = clean((_t = req.body) === null || _t === void 0 ? void 0 : _t.contactName, 200);
+            const contactEmail = cleanEmail((_u = req.body) === null || _u === void 0 ? void 0 : _u.contactEmail);
+            const contactPhone = cleanPhone((_v = req.body) === null || _v === void 0 ? void 0 : _v.contactPhone);
+            const website = clean((_w = req.body) === null || _w === void 0 ? void 0 : _w.clientWebsite, 500).toLowerCase();
+            const serviceNeeded = clean((_x = req.body) === null || _x === void 0 ? void 0 : _x.serviceNeeded, 200);
+            const needDescription = clean((_y = req.body) === null || _y === void 0 ? void 0 : _y.needDescription, 3000);
+            const relationship = clean((_z = req.body) === null || _z === void 0 ? void 0 : _z.relationship, 200) || "Recorded by Creativa Poeta from an external contact channel";
+            const introductionMethod = clean((_0 = req.body) === null || _0 === void 0 ? void 0 : _0.introductionMethod, 120) || "manual_admin_entry";
+            const consentStatus = ((_1 = req.body) === null || _1 === void 0 ? void 0 : _1.consentStatus) === "agreed" ? "agreed" : "not_yet";
+            if ((clientType === "company" && !companyName) || !contactName || (!contactEmail && !contactPhone) || (contactEmail && !emailIsValid(contactEmail)) || !serviceNeeded) {
                 res.status(400).json({ message: "Complete the required client fields and provide a client email or phone number." });
                 return;
             }
@@ -538,7 +566,10 @@ const createManualReferralEntry = async (req, res) => {
                 duplicateFilters.push({ contactPhone });
             if (website)
                 duplicateFilters.push({ website });
-            duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+            if (companyName)
+                duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+            if (clientType === "person")
+                duplicateFilters.push({ clientType: "person", contactName: new RegExp(`^${escapeRegex(contactName)}$`, "i") });
             const possibleDuplicate = await ReferralLead_1.default.findOne({ $or: duplicateFilters }).select("_id");
             const status = consentStatus === "agreed"
                 ? (possibleDuplicate ? "under_review" : "submitted")
@@ -549,26 +580,27 @@ const createManualReferralEntry = async (req, res) => {
                 partnerName: partner.name,
                 partnerEmail: partner.email,
                 partnerPhone: partner.phone,
+                clientType,
                 companyName,
                 contactName,
                 contactEmail,
                 contactPhone,
                 website,
                 serviceNeeded,
-                budgetRange: clean((_1 = req.body) === null || _1 === void 0 ? void 0 : _1.budgetRange, 100),
+                budgetRange: clean((_2 = req.body) === null || _2 === void 0 ? void 0 : _2.budgetRange, 100),
                 needDescription,
                 relationship,
                 consentStatus,
                 introductionMethod,
-                introductionDetails: clean((_2 = req.body) === null || _2 === void 0 ? void 0 : _2.introductionDetails, 1500),
-                locale: clean((_3 = req.body) === null || _3 === void 0 ? void 0 : _3.locale, 12) || partner.locale || "fr",
+                introductionDetails: clean((_3 = req.body) === null || _3 === void 0 ? void 0 : _3.introductionDetails, 1500),
+                locale: clean((_4 = req.body) === null || _4 === void 0 ? void 0 : _4.locale, 12) || partner.locale || "fr",
                 status,
                 activity: [
                     { type: "submitted", message: "Client introduction manually recorded by an administrator", actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() },
                     ...(possibleDuplicate ? [{ type: "note", message: "Possible duplicate detected; manual review required", actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() }] : []),
                 ],
             });
-            partner.activity.push({ type: "note", message: `Manual client introduction recorded for ${companyName}`, actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() });
+            partner.activity.push({ type: "note", message: `Manual client introduction recorded for ${companyName || contactName}`, actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() });
         }
         await partner.save();
         const accessUrl = plainSecret ? (0, referralProgramPolicy_1.buildPrivatePartnerAccessUrl)(FRONTEND_URL, partner.partnerId || "", plainSecret) : undefined;

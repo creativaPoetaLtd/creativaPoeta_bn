@@ -8,14 +8,15 @@ export interface IReferralLead extends Document {
   partnerName: string;
   partnerEmail?: string;
   partnerPhone?: string;
-  companyName: string;
+  clientType: "person" | "company";
+  companyName?: string;
   contactName: string;
   contactEmail?: string;
   contactPhone?: string;
   website?: string;
   serviceNeeded: string;
   budgetRange?: string;
-  needDescription: string;
+  needDescription?: string;
   relationship: string;
   consentStatus: "agreed" | "not_yet" | "prospect_submitted";
   introductionMethod: string;
@@ -45,14 +46,15 @@ const ReferralLeadSchema = new Schema<IReferralLead>(
     partnerName: { type: String, required: true, trim: true },
     partnerEmail: { type: String, trim: true, lowercase: true },
     partnerPhone: { type: String, trim: true },
-    companyName: { type: String, required: true, trim: true },
+    clientType: { type: String, enum: ["person", "company"], default: "company" },
+    companyName: { type: String, trim: true },
     contactName: { type: String, required: true, trim: true },
     contactEmail: { type: String, trim: true, lowercase: true },
     contactPhone: { type: String, trim: true },
     website: { type: String, trim: true, lowercase: true },
     serviceNeeded: { type: String, required: true, trim: true },
     budgetRange: { type: String, trim: true },
-    needDescription: { type: String, required: true, trim: true },
+    needDescription: { type: String, trim: true },
     relationship: { type: String, required: true, trim: true },
     consentStatus: { type: String, enum: ["agreed", "not_yet", "prospect_submitted"], default: "not_yet" },
     introductionMethod: { type: String, required: true, trim: true },

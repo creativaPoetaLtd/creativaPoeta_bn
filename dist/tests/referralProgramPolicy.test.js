@@ -39,12 +39,15 @@ const ReferralPartner_1 = __importDefault(require("../models/ReferralPartner"));
     strict_1.default.equal(first.key.includes("203.0.113.42"), false);
     strict_1.default.equal(referralProgramPolicy_1.REFERRAL_RATE_LIMITS.partner_application.limit, 4);
     strict_1.default.equal(referralProgramPolicy_1.REFERRAL_RATE_LIMITS.direct_referral.limit, 6);
+    strict_1.default.equal(referralProgramPolicy_1.REFERRAL_RATE_LIMITS.career_application.limit, 5);
 });
 (0, node_test_1.default)("rate-limit policy rejects the first request above the configured threshold", () => {
     strict_1.default.deepEqual((0, referralProgramPolicy_1.getReferralRateLimitDecision)("partner_application", 4), { allowed: true, remaining: 0, limit: 4 });
     strict_1.default.deepEqual((0, referralProgramPolicy_1.getReferralRateLimitDecision)("partner_application", 5), { allowed: false, remaining: 0, limit: 4 });
     strict_1.default.equal((0, referralProgramPolicy_1.getReferralRateLimitDecision)("partner_lead", 20).allowed, true);
     strict_1.default.equal((0, referralProgramPolicy_1.getReferralRateLimitDecision)("partner_lead", 21).allowed, false);
+    strict_1.default.equal((0, referralProgramPolicy_1.getReferralRateLimitDecision)("career_application", 5).allowed, true);
+    strict_1.default.equal((0, referralProgramPolicy_1.getReferralRateLimitDecision)("career_application", 6).allowed, false);
 });
 (0, node_test_1.default)("private access secrets stay in the URL fragment and are removed from JSON", () => {
     const secret = "private-secret-value";

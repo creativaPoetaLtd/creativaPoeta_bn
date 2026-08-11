@@ -10,6 +10,7 @@ exports.REFERRAL_RATE_LIMITS = {
     partner_lead: { limit: 20, windowMs: 60 * 60000 },
     direct_referral: { limit: 6, windowMs: 60 * 60000 },
     prospect_referral: { limit: 8, windowMs: 60 * 60000 },
+    career_application: { limit: 5, windowMs: 60 * 60000 },
 };
 exports.rewardTransitions = {
     waiting_client_payment: ["earned", "cancelled"],

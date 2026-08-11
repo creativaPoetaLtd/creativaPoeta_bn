@@ -45,6 +45,7 @@ test("rate-limit keys are scoped, stable per window and never expose the IP", ()
   assert.equal(first.key.includes("203.0.113.42"), false);
   assert.equal(REFERRAL_RATE_LIMITS.partner_application.limit, 4);
   assert.equal(REFERRAL_RATE_LIMITS.direct_referral.limit, 6);
+  assert.equal(REFERRAL_RATE_LIMITS.career_application.limit, 5);
 });
 
 test("rate-limit policy rejects the first request above the configured threshold", () => {
@@ -52,6 +53,8 @@ test("rate-limit policy rejects the first request above the configured threshold
   assert.deepEqual(getReferralRateLimitDecision("partner_application", 5), { allowed: false, remaining: 0, limit: 4 });
   assert.equal(getReferralRateLimitDecision("partner_lead", 20).allowed, true);
   assert.equal(getReferralRateLimitDecision("partner_lead", 21).allowed, false);
+  assert.equal(getReferralRateLimitDecision("career_application", 5).allowed, true);
+  assert.equal(getReferralRateLimitDecision("career_application", 6).allowed, false);
 });
 
 test("private access secrets stay in the URL fragment and are removed from JSON", () => {

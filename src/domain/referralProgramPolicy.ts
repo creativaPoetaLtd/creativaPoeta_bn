@@ -1,13 +1,14 @@
 import crypto from "crypto";
 import { ReferralRewardStatus } from "../models/ReferralReward";
 
-export type ReferralPublicAction = "partner_application" | "partner_lead" | "direct_referral" | "prospect_referral";
+export type ReferralPublicAction = "partner_application" | "partner_lead" | "direct_referral" | "prospect_referral" | "career_application";
 
 export const REFERRAL_RATE_LIMITS: Record<ReferralPublicAction, { limit: number; windowMs: number }> = {
   partner_application: { limit: 4, windowMs: 60 * 60_000 },
   partner_lead: { limit: 20, windowMs: 60 * 60_000 },
   direct_referral: { limit: 6, windowMs: 60 * 60_000 },
   prospect_referral: { limit: 8, windowMs: 60 * 60_000 },
+  career_application: { limit: 5, windowMs: 60 * 60_000 },
 };
 
 export const rewardTransitions: Readonly<Record<ReferralRewardStatus, readonly ReferralRewardStatus[]>> = {

@@ -2,6 +2,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const jobApplicationController_1 = require("../controllers/jobApplicationController");
+const authMiddleware_1 = require("../middleware/authMiddleware");
+const permissionMiddleware_1 = require("../middleware/permissionMiddleware");
 const jobRouter = (0, express_1.Router)();
+const manageJobs = (0, permissionMiddleware_1.authorizeAdminPermission)("jobs:manage", ["admin_1", "admin_2"]);
 jobRouter.post("/apply", jobApplicationController_1.sendJobApplication);
+jobRouter.get("/applications", authMiddleware_1.authenticateUser, authMiddleware_1.adminOnly, manageJobs, jobApplicationController_1.getJobApplications);
+jobRouter.patch("/applications/:id", authMiddleware_1.authenticateUser, authMiddleware_1.adminOnly, manageJobs, jobApplicationController_1.updateJobApplication);
 exports.default = jobRouter;
