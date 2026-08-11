@@ -2,6 +2,8 @@ import express from "express";
 import {
   applyToReferralProgram,
   claimReferralLead,
+  createManualReferralEntry,
+  submitDirectReferral,
   getReferralLeads,
   getReferralPartners,
   getReferralProgramSummary,
@@ -32,9 +34,11 @@ const canPayRewards = authorizeAdminPermission("rewards:pay", ["admin_0"]);
 
 router.post("/partners", applyToReferralProgram);
 router.post("/leads", submitReferralLead);
+router.post("/direct-referrals", submitDirectReferral);
 router.post("/prospect-referrals", submitProspectReferral);
 
 router.get("/summary", authenticateUser, canRead, getReferralProgramSummary);
+router.post("/manual-entries", authenticateUser, canManage, createManualReferralEntry);
 router.get("/partners", authenticateUser, canRead, getReferralPartners);
 router.patch("/partners/:id", authenticateUser, canApprovePartners, updateReferralPartner);
 router.get("/leads", authenticateUser, canRead, getReferralLeads);

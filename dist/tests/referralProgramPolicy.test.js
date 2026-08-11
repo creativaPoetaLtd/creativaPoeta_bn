@@ -7,16 +7,18 @@ const strict_1 = __importDefault(require("node:assert/strict"));
 const node_test_1 = __importDefault(require("node:test"));
 const referralProgramPolicy_1 = require("../domain/referralProgramPolicy");
 const ReferralPartner_1 = __importDefault(require("../models/ReferralPartner"));
-(0, node_test_1.default)("standard referral reward is 10% and capped at EUR 200", () => {
+(0, node_test_1.default)("standard referral reward is 10% without a default cap", () => {
     strict_1.default.equal((0, referralProgramPolicy_1.calculateReferralReward)(30000), 3000);
     strict_1.default.equal((0, referralProgramPolicy_1.calculateReferralReward)(150000), 15000);
-    strict_1.default.equal((0, referralProgramPolicy_1.calculateReferralReward)(300000), 20000);
+    strict_1.default.equal((0, referralProgramPolicy_1.calculateReferralReward)(300000), 30000);
+    strict_1.default.equal((0, referralProgramPolicy_1.calculateReferralReward)(10000000), 1000000);
     strict_1.default.equal((0, referralProgramPolicy_1.calculateReferralReward)(-500), 0);
 });
-(0, node_test_1.default)("reward calculation clamps unsafe values", () => {
+(0, node_test_1.default)("reward calculation supports an explicit optional cap and clamps unsafe values", () => {
     strict_1.default.equal((0, referralProgramPolicy_1.calculateReferralReward)(10000, 20000, 50000), 10000);
-    strict_1.default.equal((0, referralProgramPolicy_1.calculateReferralReward)(Number.NaN, 1000, 20000), 0);
-    strict_1.default.equal((0, referralProgramPolicy_1.calculateReferralReward)(10000, 1000, -1), 0);
+    strict_1.default.equal((0, referralProgramPolicy_1.calculateReferralReward)(300000, 1000, 20000), 20000);
+    strict_1.default.equal((0, referralProgramPolicy_1.calculateReferralReward)(Number.NaN, 1000, 0), 0);
+    strict_1.default.equal((0, referralProgramPolicy_1.calculateReferralReward)(10000, 1000, -1), 1000);
 });
 (0, node_test_1.default)("reward workflow only allows the controlled forward sequence", () => {
     strict_1.default.equal((0, referralProgramPolicy_1.canTransitionReferralReward)("waiting_client_payment", "earned"), true);
@@ -36,6 +38,7 @@ const ReferralPartner_1 = __importDefault(require("../models/ReferralPartner"));
     strict_1.default.notEqual(first.key, otherAction.key);
     strict_1.default.equal(first.key.includes("203.0.113.42"), false);
     strict_1.default.equal(referralProgramPolicy_1.REFERRAL_RATE_LIMITS.partner_application.limit, 4);
+    strict_1.default.equal(referralProgramPolicy_1.REFERRAL_RATE_LIMITS.direct_referral.limit, 6);
 });
 (0, node_test_1.default)("rate-limit policy rejects the first request above the configured threshold", () => {
     strict_1.default.deepEqual((0, referralProgramPolicy_1.getReferralRateLimitDecision)("partner_application", 4), { allowed: true, remaining: 0, limit: 4 });

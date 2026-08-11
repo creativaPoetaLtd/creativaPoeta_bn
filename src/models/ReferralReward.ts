@@ -29,7 +29,7 @@ const ReferralRewardSchema = new Schema<IReferralReward>(
     currency: { type: String, trim: true, uppercase: true, default: "EUR" },
     eligibleRevenueCents: { type: Number, min: 0, default: 0 },
     rateBasisPoints: { type: Number, min: 0, max: 10000, default: 1000 },
-    capCents: { type: Number, min: 0, default: 20000 },
+    capCents: { type: Number, min: 0, default: 0 },
     amountCents: { type: Number, min: 0, default: 0 },
     status: { type: String, enum: ["waiting_client_payment", "earned", "approved", "scheduled", "paid", "cancelled"], default: "waiting_client_payment" },
     paymentReference: { type: String, trim: true },

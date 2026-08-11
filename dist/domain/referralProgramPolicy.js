@@ -8,6 +8,7 @@ const crypto_1 = __importDefault(require("crypto"));
 exports.REFERRAL_RATE_LIMITS = {
     partner_application: { limit: 4, windowMs: 60 * 60000 },
     partner_lead: { limit: 20, windowMs: 60 * 60000 },
+    direct_referral: { limit: 6, windowMs: 60 * 60000 },
     prospect_referral: { limit: 8, windowMs: 60 * 60000 },
 };
 exports.rewardTransitions = {
@@ -20,11 +21,12 @@ exports.rewardTransitions = {
 };
 const canTransitionReferralReward = (from, to) => exports.rewardTransitions[from].includes(to);
 exports.canTransitionReferralReward = canTransitionReferralReward;
-const calculateReferralReward = (eligibleRevenueCents, rateBasisPoints = 1000, capCents = 20000) => {
+const calculateReferralReward = (eligibleRevenueCents, rateBasisPoints = 1000, capCents = 0) => {
     const revenue = Number.isFinite(eligibleRevenueCents) ? Math.max(0, Math.round(eligibleRevenueCents)) : 0;
     const rate = Number.isFinite(rateBasisPoints) ? Math.min(10000, Math.max(0, Math.round(rateBasisPoints))) : 1000;
-    const cap = Number.isFinite(capCents) ? Math.max(0, Math.round(capCents)) : 20000;
-    return Math.min(cap, Math.round((revenue * rate) / 10000));
+    const cap = Number.isFinite(capCents) ? Math.max(0, Math.round(capCents)) : 0;
+    const calculated = Math.round((revenue * rate) / 10000);
+    return cap > 0 ? Math.min(cap, calculated) : calculated;
 };
 exports.calculateReferralReward = calculateReferralReward;
 const buildReferralRateLimitKey = (ipAddress, action, now, secret) => {

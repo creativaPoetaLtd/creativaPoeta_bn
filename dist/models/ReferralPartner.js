@@ -38,7 +38,9 @@ const ReferralPartnerSchema = new mongoose_1.Schema({
     partnerId: { type: String, trim: true, uppercase: true, unique: true, sparse: true },
     referralCode: { type: String, trim: true, unique: true, sparse: true, select: false },
     name: { type: String, required: true, trim: true },
-    email: { type: String, required: true, trim: true, lowercase: true },
+    email: { type: String, trim: true, lowercase: true },
+    phone: { type: String, trim: true },
+    preferredContact: { type: String, enum: ["email", "whatsapp", "phone", "sms", "other"], default: "email" },
     country: { type: String, required: true, trim: true },
     locale: { type: String, trim: true, default: "fr" },
     profileType: { type: String, required: true, trim: true },
@@ -70,6 +72,7 @@ const ReferralPartnerSchema = new mongoose_1.Schema({
     },
 });
 ReferralPartnerSchema.index({ email: 1, status: 1 });
+ReferralPartnerSchema.index({ phone: 1, status: 1 });
 ReferralPartnerSchema.index({ status: 1, createdAt: -1 });
 ReferralPartnerSchema.index({ program: 1, status: 1 });
 exports.default = mongoose_1.default.model("ReferralPartner", ReferralPartnerSchema);

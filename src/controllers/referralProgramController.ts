@@ -7,7 +7,7 @@ import { buildPrivatePartnerAccessUrl, calculateReferralReward, canTransitionRef
 import { consumeReferralRateLimit } from "../services/referralRateLimitService";
 import sendEmail from "../utils/sendEmail";
 
-const TERMS_VERSION = "2026-08-10";
+const TERMS_VERSION = "2026-08-11";
 const FRONTEND_URL = (process.env.FRONTEND_URL || "https://creativapoeta.com").replace(/\/$/, "");
 
 const partnerStatuses: ReferralPartnerStatus[] = ["pending", "approved", "active", "rejected", "suspended", "closed"];
@@ -16,6 +16,13 @@ const rewardStatuses: ReferralRewardStatus[] = ["waiting_client_payment", "earne
 
 const clean = (value: unknown, maxLength = 5000) => String(value || "").trim().slice(0, maxLength);
 const cleanEmail = (value: unknown) => clean(value, 320).toLowerCase();
+const cleanPhone = (value: unknown) => clean(value, 80);
+const contactPreferences = ["email", "whatsapp", "phone", "sms", "other"] as const;
+type ContactPreference = typeof contactPreferences[number];
+const cleanContactPreference = (value: unknown, hasEmail: boolean): ContactPreference => {
+  const candidate = clean(value, 20) as ContactPreference;
+  return contactPreferences.includes(candidate) ? candidate : (hasEmail ? "email" : "whatsapp");
+};
 const escapeHtml = (value: unknown) => clean(value)
   .replace(/&/g, "&amp;")
   .replace(/</g, "&lt;")
@@ -77,6 +84,8 @@ export const applyToReferralProgram = async (req: Request, res: Response, next: 
 
     const name = clean(req.body?.name, 200);
     const email = cleanEmail(req.body?.email);
+    const phone = cleanPhone(req.body?.phone);
+    const preferredContact = cleanContactPreference(req.body?.preferredContact, Boolean(email));
     const country = clean(req.body?.country, 120);
     const locale = clean(req.body?.locale, 12) || "fr";
     const profileType = clean(req.body?.profileType, 120);
@@ -85,13 +94,16 @@ export const applyToReferralProgram = async (req: Request, res: Response, next: 
     const networkDescription = clean(req.body?.networkDescription, 2000);
     const termsAccepted = req.body?.termsAccepted === true;
 
-    if (!name || !emailIsValid(email) || !country || !profileType || !termsAccepted) {
+    if (!name || (!email && !phone) || (email && !emailIsValid(email)) || !country || !profileType || !termsAccepted) {
       res.status(400).json({ message: "Required fields or terms acceptance are missing." });
       return;
     }
 
+    const contactFilters: Record<string, string>[] = [];
+    if (email) contactFilters.push({ email });
+    if (phone) contactFilters.push({ phone });
     const existing = await ReferralPartner.findOne({
-      email,
+      $or: contactFilters,
       status: { $in: ["pending", "approved", "active", "suspended"] },
     });
     if (existing) {
@@ -100,8 +112,12 @@ export const applyToReferralProgram = async (req: Request, res: Response, next: 
     }
 
     const partner = await ReferralPartner.create({
+      partnerId: await createPartnerId(program),
+      referralCode: await createReferralCode(),
       name,
       email,
+      phone,
+      preferredContact,
       country,
       locale,
       profileType,
@@ -116,7 +132,7 @@ export const applyToReferralProgram = async (req: Request, res: Response, next: 
 
     const emailSent = await sendAdminNotice(
       `New ${program} partner application - ${name}`,
-      `<h2>New CPRPP application</h2><p><strong>Name:</strong> ${escapeHtml(name)}</p><p><strong>Email:</strong> ${escapeHtml(email)}</p><p><strong>Country:</strong> ${escapeHtml(country)}</p><p><strong>Program:</strong> ${escapeHtml(program)}</p>`
+      `<h2>New client-introduction program application</h2><p><strong>Name:</strong> ${escapeHtml(name)}</p><p><strong>Email:</strong> ${escapeHtml(email || "Not provided")}</p><p><strong>Phone / WhatsApp:</strong> ${escapeHtml(phone || "Not provided")}</p><p><strong>Preferred contact:</strong> ${escapeHtml(preferredContact)}</p><p><strong>Country:</strong> ${escapeHtml(country)}</p><p><strong>Program:</strong> ${escapeHtml(program)}</p>`
     );
 
     res.status(201).json({ applicationId: partner._id, status: partner.status, emailSent });
@@ -183,6 +199,7 @@ export const submitReferralLead = async (req: Request, res: Response, next: Next
       partnerId: partner.partnerId,
       partnerName: partner.name,
       partnerEmail: partner.email,
+      partnerPhone: partner.phone,
       companyName,
       contactName,
       contactEmail,
@@ -212,6 +229,147 @@ export const submitReferralLead = async (req: Request, res: Response, next: Next
       `<h2>New CPRPP referral</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Company:</strong> ${escapeHtml(companyName)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)}</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p><p><strong>Consent:</strong> ${escapeHtml(consentStatus)}</p>`
     );
     res.status(201).json({ leadId: lead._id, status: lead.status, emailSent });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const submitDirectReferral = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    if (clean(req.body?.websiteConfirmation, 200)) {
+      res.status(201).json({ message: "Introduction received.", status: "submitted" });
+      return;
+    }
+    if (!(await consumeReferralRateLimit(req, res, "direct_referral"))) {
+      res.status(429).json({ message: "Too many requests. Please try again later." });
+      return;
+    }
+
+    const referrerName = clean(req.body?.referrerName, 200);
+    const referrerEmail = cleanEmail(req.body?.referrerEmail);
+    const referrerPhone = cleanPhone(req.body?.referrerPhone);
+    const preferredContact = cleanContactPreference(req.body?.preferredContact, Boolean(referrerEmail));
+    const referrerCountry = clean(req.body?.referrerCountry, 120);
+    const referrerProfileType = clean(req.body?.referrerProfileType, 120) || "individual";
+    const referrerWebsite = clean(req.body?.referrerWebsite, 500);
+    const locale = clean(req.body?.locale, 12) || "fr";
+    const termsAccepted = req.body?.termsAccepted === true;
+
+    const companyName = clean(req.body?.companyName, 220);
+    const contactName = clean(req.body?.contactName, 200);
+    const contactEmail = cleanEmail(req.body?.contactEmail);
+    const contactPhone = clean(req.body?.contactPhone, 80);
+    const website = clean(req.body?.website, 500).toLowerCase();
+    const serviceNeeded = clean(req.body?.serviceNeeded, 200);
+    const budgetRange = clean(req.body?.budgetRange, 100);
+    const needDescription = clean(req.body?.needDescription, 3000);
+    const relationship = clean(req.body?.relationship, 200);
+    const consentStatus = req.body?.consentStatus === "agreed" ? "agreed" : "not_yet";
+    const introductionMethod = clean(req.body?.introductionMethod, 120);
+    const introductionDetails = clean(req.body?.introductionDetails, 1500);
+
+    if (!referrerName || (!referrerEmail && !referrerPhone) || (referrerEmail && !emailIsValid(referrerEmail)) || !referrerCountry || !termsAccepted) {
+      res.status(400).json({ message: "Your required details and acceptance of the program terms are missing." });
+      return;
+    }
+    if (!companyName || !contactName || !serviceNeeded || !needDescription || !relationship || !introductionMethod) {
+      res.status(400).json({ message: "Required client introduction fields are missing." });
+      return;
+    }
+    if (contactEmail && !emailIsValid(contactEmail)) {
+      res.status(400).json({ message: "The client email address is invalid." });
+      return;
+    }
+    if (!contactEmail && !contactPhone) {
+      res.status(400).json({ message: "A client email address or phone number is required." });
+      return;
+    }
+
+    const referrerContactFilters: Record<string, string>[] = [];
+    if (referrerEmail) referrerContactFilters.push({ email: referrerEmail });
+    if (referrerPhone) referrerContactFilters.push({ phone: referrerPhone });
+    let partner = await ReferralPartner.findOne({
+      $or: referrerContactFilters,
+      status: { $in: ["pending", "approved", "active", "suspended"] },
+    }).select("+referralCode");
+    if (partner?.status === "suspended") {
+      res.status(403).json({ message: "This program account is currently inactive." });
+      return;
+    }
+    if (!partner) {
+      partner = await ReferralPartner.create({
+        partnerId: await createPartnerId("referral"),
+        referralCode: await createReferralCode(),
+        name: referrerName,
+        email: referrerEmail,
+        phone: referrerPhone,
+        preferredContact,
+        country: referrerCountry,
+        locale,
+        profileType: referrerProfileType,
+        program: "referral",
+        website: referrerWebsite,
+        status: "pending",
+        termsVersion: TERMS_VERSION,
+        termsAcceptedAt: new Date(),
+        marketingConsent: false,
+        activity: [{ type: "application", message: "Program account created with first client introduction", at: new Date() }],
+      });
+    } else {
+      if (!partner.partnerId) partner.partnerId = await createPartnerId(partner.program);
+      if (!partner.referralCode) partner.referralCode = await createReferralCode();
+    }
+
+    const duplicateFilters: Record<string, unknown>[] = [];
+    if (contactEmail) duplicateFilters.push({ contactEmail });
+    if (website) duplicateFilters.push({ website });
+    duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+    const possibleDuplicate = await ReferralLead.findOne({ $or: duplicateFilters }).select("_id");
+    const initialStatus: ReferralLeadStatus = consentStatus === "agreed"
+      ? (possibleDuplicate ? "under_review" : "submitted")
+      : "waiting_for_introduction";
+
+    const lead = await ReferralLead.create({
+      partner: partner._id,
+      partnerId: partner.partnerId,
+      partnerName: partner.name,
+      partnerEmail: partner.email,
+      partnerPhone: partner.phone,
+      companyName,
+      contactName,
+      contactEmail,
+      contactPhone,
+      website,
+      serviceNeeded,
+      budgetRange,
+      needDescription,
+      relationship,
+      consentStatus,
+      introductionMethod,
+      introductionDetails,
+      locale,
+      status: initialStatus,
+      activity: [
+        { type: "submitted", message: "First client introduction submitted with program registration", at: new Date() },
+        ...(possibleDuplicate ? [{ type: "note" as const, message: "Possible duplicate detected; manual review required", at: new Date() }] : []),
+      ],
+    });
+
+    if (partner.status === "approved") partner.status = "active";
+    partner.activity.push({ type: "note", message: `Client introduction submitted for ${companyName}`, at: new Date() });
+    await partner.save();
+
+    const emailSent = await sendAdminNotice(
+      `New direct client introduction - ${companyName}`,
+      `<h2>New client introduction and program registration</h2><p><strong>Introducer:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Introducer contact:</strong> ${escapeHtml(partner.email || partner.phone || "Not provided")}</p><p><strong>Company:</strong> ${escapeHtml(companyName)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)}</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p><p><strong>Consent:</strong> ${escapeHtml(consentStatus)}</p>`
+    );
+    res.status(201).json({
+      leadId: lead._id,
+      status: lead.status,
+      partnerId: partner.partnerId,
+      applicationStatus: partner.status,
+      emailSent,
+    });
   } catch (error) {
     next(error);
   }
@@ -256,6 +414,7 @@ export const submitProspectReferral = async (req: Request, res: Response, next: 
       partnerId: partner.partnerId,
       partnerName: partner.name,
       partnerEmail: partner.email,
+      partnerPhone: partner.phone,
       companyName,
       contactName,
       contactEmail,
@@ -288,6 +447,156 @@ export const submitProspectReferral = async (req: Request, res: Response, next: 
   }
 };
 
+export const createManualReferralEntry = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const existingPartnerId = clean(req.body?.existingPartnerId, 40).toUpperCase();
+    const approveNow = req.body?.approveNow === true;
+    const regenerateAccess = req.body?.regenerateAccess === true;
+    const includeClient = req.body?.includeClient === true;
+    let partner = existingPartnerId
+      ? await ReferralPartner.findOne({ partnerId: existingPartnerId }).select("+accessSecretHash +referralCode")
+      : null;
+
+    if (existingPartnerId && !partner) {
+      res.status(404).json({ message: "The selected partner ID was not found." });
+      return;
+    }
+
+    if (!partner) {
+      const name = clean(req.body?.name, 200);
+      const email = cleanEmail(req.body?.email);
+      const phone = cleanPhone(req.body?.phone);
+      const country = clean(req.body?.country, 120);
+      const profileType = clean(req.body?.profileType, 120);
+      const locale = clean(req.body?.locale, 12) || "fr";
+      const program = req.body?.program === "business" ? "business" : "referral";
+      const preferredContact = cleanContactPreference(req.body?.preferredContact, Boolean(email));
+
+      if (!name || (!email && !phone) || (email && !emailIsValid(email)) || !country || !profileType || req.body?.termsAccepted !== true) {
+        res.status(400).json({ message: "Provide the introducer's name, country, profile, accepted terms and at least an email or phone/WhatsApp number." });
+        return;
+      }
+
+      const contactFilters: Record<string, string>[] = [];
+      if (email) contactFilters.push({ email });
+      if (phone) contactFilters.push({ phone });
+      const duplicatePartner = await ReferralPartner.findOne({
+        $or: contactFilters,
+        status: { $in: ["pending", "approved", "active", "suspended"] },
+      });
+      if (duplicatePartner) {
+        res.status(409).json({ message: `This contact already belongs to partner ${duplicatePartner.partnerId || duplicatePartner._id}. Use the existing partner ID instead.` });
+        return;
+      }
+
+      partner = await ReferralPartner.create({
+        partnerId: await createPartnerId(program),
+        referralCode: await createReferralCode(),
+        name,
+        email,
+        phone,
+        preferredContact,
+        country,
+        locale,
+        profileType,
+        program,
+        website: clean(req.body?.website, 500),
+        status: "pending",
+        termsVersion: TERMS_VERSION,
+        termsAcceptedAt: new Date(),
+        marketingConsent: req.body?.marketingConsent === true,
+        activity: [{ type: "application", message: "Application manually recorded from an external contact channel", actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() }],
+      });
+    }
+
+    if (!partner) {
+      res.status(500).json({ message: "Unable to create the partner record." });
+      return;
+    }
+
+    if (!partner.partnerId) partner.partnerId = await createPartnerId(partner.program);
+    if (!partner.referralCode) partner.referralCode = await createReferralCode();
+    let plainSecret = "";
+    if (approveNow) {
+      if (!["approved", "active"].includes(partner.status)) partner.status = "approved";
+      if (!partner.accessSecretHash || regenerateAccess) {
+        plainSecret = createSecret();
+        partner.accessSecretHash = hashSecret(plainSecret);
+        partner.activity.push({ type: "access", message: "Secure access generated for manual sharing", actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() });
+      }
+      partner.reviewedAt = new Date();
+      partner.reviewedBy = getAdminEmail(req);
+    }
+
+    let lead = null;
+    if (includeClient) {
+      const companyName = clean(req.body?.companyName, 220);
+      const contactName = clean(req.body?.contactName, 200);
+      const contactEmail = cleanEmail(req.body?.contactEmail);
+      const contactPhone = cleanPhone(req.body?.contactPhone);
+      const website = clean(req.body?.clientWebsite, 500).toLowerCase();
+      const serviceNeeded = clean(req.body?.serviceNeeded, 200);
+      const needDescription = clean(req.body?.needDescription, 3000);
+      const relationship = clean(req.body?.relationship, 200) || "Recorded by Creativa Poeta from an external contact channel";
+      const introductionMethod = clean(req.body?.introductionMethod, 120) || "manual_admin_entry";
+      const consentStatus = req.body?.consentStatus === "agreed" ? "agreed" : "not_yet";
+
+      if (!companyName || !contactName || (!contactEmail && !contactPhone) || (contactEmail && !emailIsValid(contactEmail)) || !serviceNeeded || !needDescription) {
+        res.status(400).json({ message: "Complete the required client fields and provide a client email or phone number." });
+        return;
+      }
+
+      const duplicateFilters: Record<string, unknown>[] = [];
+      if (contactEmail) duplicateFilters.push({ contactEmail });
+      if (contactPhone) duplicateFilters.push({ contactPhone });
+      if (website) duplicateFilters.push({ website });
+      duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+      const possibleDuplicate = await ReferralLead.findOne({ $or: duplicateFilters }).select("_id");
+      const status: ReferralLeadStatus = consentStatus === "agreed"
+        ? (possibleDuplicate ? "under_review" : "submitted")
+        : "waiting_for_introduction";
+
+      lead = await ReferralLead.create({
+        partner: partner._id,
+        partnerId: partner.partnerId,
+        partnerName: partner.name,
+        partnerEmail: partner.email,
+        partnerPhone: partner.phone,
+        companyName,
+        contactName,
+        contactEmail,
+        contactPhone,
+        website,
+        serviceNeeded,
+        budgetRange: clean(req.body?.budgetRange, 100),
+        needDescription,
+        relationship,
+        consentStatus,
+        introductionMethod,
+        introductionDetails: clean(req.body?.introductionDetails, 1500),
+        locale: clean(req.body?.locale, 12) || partner.locale || "fr",
+        status,
+        activity: [
+          { type: "submitted", message: "Client introduction manually recorded by an administrator", actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() },
+          ...(possibleDuplicate ? [{ type: "note" as const, message: "Possible duplicate detected; manual review required", actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() }] : []),
+        ],
+      });
+      partner.activity.push({ type: "note", message: `Manual client introduction recorded for ${companyName}`, actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() });
+    }
+
+    await partner.save();
+    const accessUrl = plainSecret ? buildPrivatePartnerAccessUrl(FRONTEND_URL, partner.partnerId || "", plainSecret) : undefined;
+    const shareUrl = ["approved", "active"].includes(partner.status)
+      ? `${FRONTEND_URL}/referral-partners?ref=${encodeURIComponent(partner.referralCode || "")}#referred-business`
+      : undefined;
+    const safePartner = await ReferralPartner.findById(partner._id);
+    res.status(201).json({ partner: safePartner, lead, accessUrl, shareUrl });
+  } catch (error) {
+    console.error("Manual referral entry failed:", error);
+    res.status(500).json({ message: "Failed to create the manual referral entry." });
+  }
+};
+
 const pagination = (req: Request) => ({
   page: Math.max(1, Number(req.query.page) || 1),
   limit: Math.min(100, Math.max(1, Number(req.query.limit) || 25)),
@@ -316,7 +625,7 @@ export const getReferralPartners = async (req: Request, res: Response): Promise<
     const search = clean(req.query.search, 200);
     const filter: Record<string, unknown> = {};
     if (status && status !== "all" && partnerStatuses.includes(status as ReferralPartnerStatus)) filter.status = status;
-    if (search) filter.$or = ["name", "email", "country", "partnerId"].map((field) => ({ [field]: new RegExp(escapeRegex(search), "i") }));
+    if (search) filter.$or = ["name", "email", "phone", "country", "partnerId"].map((field) => ({ [field]: new RegExp(escapeRegex(search), "i") }));
     const [partners, total] = await Promise.all([
       ReferralPartner.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
       ReferralPartner.countDocuments(filter),
@@ -361,16 +670,20 @@ export const updateReferralPartner = async (req: Request, res: Response): Promis
     await partner.save();
 
     let emailSent = false;
+    let accessUrl = "";
+    let shareUrl = "";
     if (plainSecret) {
-      const accessUrl = buildPrivatePartnerAccessUrl(FRONTEND_URL, partner.partnerId || "", plainSecret);
-      const shareUrl = `${FRONTEND_URL}/referral-partners?ref=${encodeURIComponent(partner.referralCode || "")}#referred-business`;
-      try {
-        await sendEmail(partner.email, "Your Creativa Poeta Referral Partner access", `<h2>Welcome to the CPRPP</h2><p>Your application has been approved.</p><p><strong>Partner ID:</strong> ${escapeHtml(partner.partnerId)}</p><p><a href="${accessUrl}">Open your secure partner referral form</a></p><p><a href="${shareUrl}">Copy your prospect referral link</a></p><p>Send the prospect link to businesses that have agreed to the introduction. Keep the partner access link private.</p>`);
-        emailSent = true;
-      } catch (error) {
-        console.error("Partner approval email failed:", error);
+      accessUrl = buildPrivatePartnerAccessUrl(FRONTEND_URL, partner.partnerId || "", plainSecret);
+      shareUrl = `${FRONTEND_URL}/referral-partners?ref=${encodeURIComponent(partner.referralCode || "")}#referred-business`;
+      if (partner.email) {
+        try {
+          await sendEmail(partner.email, "Your Creativa Poeta client-introduction program access", `<h2>Your application has been approved</h2><p><strong>Partner ID:</strong> ${escapeHtml(partner.partnerId)}</p><p><a href="${accessUrl}">Open your secure client-introduction form</a></p><p><a href="${shareUrl}">Copy your client invitation link</a></p><p>You may also receive these links through your preferred contact channel. Keep the secure access link private.</p>`);
+          emailSent = true;
+        } catch (error) {
+          console.error("Partner approval email failed:", error);
+        }
       }
-    } else if (status === "rejected") {
+    } else if (status === "rejected" && partner.email) {
       try {
         await sendEmail(partner.email, "Update on your Creativa Poeta partner application", `<p>Hello ${escapeHtml(partner.name)},</p><p>We reviewed your application. It has not been accepted at this time.</p><p>${escapeHtml(reason)}</p>`);
         emailSent = true;
@@ -379,7 +692,7 @@ export const updateReferralPartner = async (req: Request, res: Response): Promis
       }
     }
     const safePartner = await ReferralPartner.findById(partner._id);
-    res.json({ partner: safePartner, emailSent });
+    res.json({ partner: safePartner, emailSent, accessUrl: accessUrl || undefined, shareUrl: shareUrl || undefined });
   } catch {
     res.status(500).json({ message: "Failed to update referral partner." });
   }
@@ -494,7 +807,7 @@ export const upsertReferralReward = async (req: Request, res: Response): Promise
     }
     const eligibleRevenueCents = Math.max(0, Math.round(Number(req.body?.eligibleRevenueCents) || 0));
     const rateBasisPoints = Math.min(10000, Math.max(0, Math.round(Number(req.body?.rateBasisPoints) || 1000)));
-    const capCents = Math.max(0, Math.round(Number(req.body?.capCents) || 20000));
+    const capCents = Math.max(0, Math.round(Number(req.body?.capCents) || 0));
     if (eligibleRevenueCents <= 0) {
       res.status(400).json({ message: "Eligible revenue must be greater than zero." });
       return;
