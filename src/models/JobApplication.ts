@@ -16,6 +16,11 @@ export interface IJobApplication extends Document {
   skills?: string;
   linkedin?: string;
   portfolio?: string;
+  hasCv?: boolean;
+  cvOriginalName?: string;
+  cvMimeType?: string;
+  discoverySource?: string;
+  discoverySourceOther?: string;
   availability?: string;
   message?: string;
   locale?: string;
@@ -41,6 +46,11 @@ const JobApplicationSchema = new Schema<IJobApplication>(
     skills: { type: String, trim: true, maxlength: 2000 },
     linkedin: { type: String, trim: true, maxlength: 500 },
     portfolio: { type: String, trim: true, maxlength: 500 },
+    hasCv: { type: Boolean, default: false },
+    cvOriginalName: { type: String, trim: true, maxlength: 240 },
+    cvMimeType: { type: String, trim: true, maxlength: 160 },
+    discoverySource: { type: String, trim: true, maxlength: 80, index: true },
+    discoverySourceOther: { type: String, trim: true, maxlength: 300 },
     availability: { type: String, trim: true, maxlength: 180 },
     message: { type: String, trim: true, maxlength: 5000 },
     locale: { type: String, trim: true, maxlength: 12 },
