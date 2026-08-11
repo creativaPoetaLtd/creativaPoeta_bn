@@ -3,6 +3,7 @@ import sendEmail from "../utils/sendEmail";
 import dotenv from "dotenv";
 import Job from "../models/Job";
 import JobApplication, { JobApplicationStatus } from "../models/JobApplication";
+import JobApplicationFile from "../models/JobApplicationFile";
 import { consumeReferralRateLimit } from "../services/referralRateLimitService";
 
 
@@ -11,6 +12,7 @@ dotenv.config();
 
 
 const clean = (value: unknown, max = 5000) => String(value || "").trim().slice(0, max);
+const discoverySources = new Set(["google", "facebook", "instagram", "linkedin", "tiktok", "youtube", "recommendation", "client_or_partner", "creativa_poeta_team", "event", "school", "job_platform", "article_or_website", "other"]);
 const cleanPublicUrl = (value: unknown) => {
     const candidate = clean(value, 500);
     if (!candidate) return undefined;
@@ -39,9 +41,11 @@ export const sendJobApplication = async (req: Request, res: Response, next: Next
         const fullName = clean(req.body.fullName, 180);
         const email = clean(req.body.email, 240).toLowerCase();
         const phone = clean(req.body.phone, 80);
-        const consentAccepted = req.body.consentAccepted === true;
-        if (!fullName || (!email && !phone) || !consentAccepted) {
-            res.status(400).json({ message: "Name, consent and at least one contact method are required." });
+        const consentAccepted = req.body.consentAccepted === true || req.body.consentAccepted === "true";
+        const discoverySource = clean(req.body.discoverySource, 80);
+        const discoverySourceOther = clean(req.body.discoverySourceOther, 300);
+        if (!fullName || (!email && !phone) || !consentAccepted || !discoverySources.has(discoverySource) || (discoverySource === "other" && !discoverySourceOther)) {
+            res.status(400).json({ message: "Name, consent, discovery source and at least one contact method are required." });
             return;
         }
 
@@ -65,11 +69,31 @@ export const sendJobApplication = async (req: Request, res: Response, next: Next
             skills: clean(skillsValue, 2000),
             linkedin: cleanPublicUrl(req.body.linkedin),
             portfolio: cleanPublicUrl(req.body.portfolio),
+            hasCv: Boolean(req.file),
+            cvOriginalName: req.file ? clean(req.file.originalname.replace(/[\\/]/g, "-"), 240) : undefined,
+            cvMimeType: req.file?.mimetype,
+            discoverySource,
+            discoverySourceOther: discoverySource === "other" ? discoverySourceOther : undefined,
             availability: clean(req.body.availability, 180),
             message: clean(req.body.message || req.body.additionalComments, 5000),
             locale: clean(req.body.locale, 12),
             consentAcceptedAt: new Date(),
         });
+
+        if (req.file) {
+            try {
+                await JobApplicationFile.create({
+                    application: application._id,
+                    originalName: application.cvOriginalName,
+                    mimeType: req.file.mimetype,
+                    size: req.file.size,
+                    data: req.file.buffer,
+                });
+            } catch (fileError) {
+                await JobApplication.findByIdAndDelete(application._id);
+                throw fileError;
+            }
+        }
 
         const emailUser = process.env.EMAIL_USER;
         if (emailUser) {
@@ -79,6 +103,8 @@ export const sendJobApplication = async (req: Request, res: Response, next: Next
                 <p><strong>Opportunity:</strong> ${escapeHtml(job?.title || application.desiredRole || "Spontaneous application")}</p>
                 <p><strong>Email:</strong> ${escapeHtml(email || "N/A")}</p>
                 <p><strong>Phone:</strong> ${escapeHtml(phone || "N/A")}</p>
+                <p><strong>How they found Creativa Poeta:</strong> ${escapeHtml(discoverySource === "other" ? discoverySourceOther : discoverySource)}</p>
+                <p><strong>CV:</strong> ${req.file ? "Available securely in the Career dashboard" : "Not provided"}</p>
                 <p><strong>Skills:</strong> ${escapeHtml(application.skills || "N/A")}</p>
                 <p><strong>Message:</strong> ${escapeHtml(application.message || "N/A")}</p>
                 <p>Open the Career tab in the Creativa Poeta dashboard to review this application.</p>`;
@@ -90,6 +116,27 @@ export const sendJobApplication = async (req: Request, res: Response, next: Next
         }
 
         res.status(201).json({ message: "Application received successfully.", applicationId: application._id });
+    } catch (error) { next(error); }
+};
+
+export const downloadJobApplicationCv = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const application = await JobApplication.findById(req.params.id).select("hasCv cvOriginalName cvMimeType");
+        if (!application?.hasCv) {
+            res.status(404).json({ message: "No CV is attached to this application." });
+            return;
+        }
+        const file = await JobApplicationFile.findOne({ application: application._id });
+        if (!file) {
+            res.status(404).json({ message: "CV file not found." });
+            return;
+        }
+        const safeName = file.originalName.replace(/[\r\n"\\/]/g, "-");
+        res.setHeader("Content-Type", file.mimeType);
+        res.setHeader("Content-Length", String(file.size));
+        res.setHeader("Content-Disposition", `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`);
+        res.setHeader("Cache-Control", "private, no-store");
+        res.status(200).send(file.data);
     } catch (error) { next(error); }
 };
 

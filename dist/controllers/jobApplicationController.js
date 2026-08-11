@@ -3,14 +3,16 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateJobApplication = exports.getJobApplications = exports.sendJobApplication = void 0;
+exports.updateJobApplication = exports.getJobApplications = exports.downloadJobApplicationCv = exports.sendJobApplication = void 0;
 const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const Job_1 = __importDefault(require("../models/Job"));
 const JobApplication_1 = __importDefault(require("../models/JobApplication"));
+const JobApplicationFile_1 = __importDefault(require("../models/JobApplicationFile"));
 const referralRateLimitService_1 = require("../services/referralRateLimitService");
 dotenv_1.default.config();
 const clean = (value, max = 5000) => String(value || "").trim().slice(0, max);
+const discoverySources = new Set(["google", "facebook", "instagram", "linkedin", "tiktok", "youtube", "recommendation", "client_or_partner", "creativa_poeta_team", "event", "school", "job_platform", "article_or_website", "other"]);
 const cleanPublicUrl = (value) => {
     const candidate = clean(value, 500);
     if (!candidate)
@@ -27,7 +29,7 @@ const escapeHtml = (value) => clean(value).replace(/[&<>'"]/g, (character) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
 }[character] || character));
 const sendJobApplication = async (req, res, next) => {
-    var _a;
+    var _a, _b;
     try {
         if ((_a = req.body) === null || _a === void 0 ? void 0 : _a.websiteConfirmation) {
             res.status(201).json({ message: "Application received successfully." });
@@ -40,9 +42,11 @@ const sendJobApplication = async (req, res, next) => {
         const fullName = clean(req.body.fullName, 180);
         const email = clean(req.body.email, 240).toLowerCase();
         const phone = clean(req.body.phone, 80);
-        const consentAccepted = req.body.consentAccepted === true;
-        if (!fullName || (!email && !phone) || !consentAccepted) {
-            res.status(400).json({ message: "Name, consent and at least one contact method are required." });
+        const consentAccepted = req.body.consentAccepted === true || req.body.consentAccepted === "true";
+        const discoverySource = clean(req.body.discoverySource, 80);
+        const discoverySourceOther = clean(req.body.discoverySourceOther, 300);
+        if (!fullName || (!email && !phone) || !consentAccepted || !discoverySources.has(discoverySource) || (discoverySource === "other" && !discoverySourceOther)) {
+            res.status(400).json({ message: "Name, consent, discovery source and at least one contact method are required." });
             return;
         }
         const job = req.body.jobId ? await Job_1.default.findOne({ _id: req.body.jobId, $or: [{ status: "published" }, { status: { $exists: false } }] }) : null;
@@ -64,11 +68,31 @@ const sendJobApplication = async (req, res, next) => {
             skills: clean(skillsValue, 2000),
             linkedin: cleanPublicUrl(req.body.linkedin),
             portfolio: cleanPublicUrl(req.body.portfolio),
+            hasCv: Boolean(req.file),
+            cvOriginalName: req.file ? clean(req.file.originalname.replace(/[\\/]/g, "-"), 240) : undefined,
+            cvMimeType: (_b = req.file) === null || _b === void 0 ? void 0 : _b.mimetype,
+            discoverySource,
+            discoverySourceOther: discoverySource === "other" ? discoverySourceOther : undefined,
             availability: clean(req.body.availability, 180),
             message: clean(req.body.message || req.body.additionalComments, 5000),
             locale: clean(req.body.locale, 12),
             consentAcceptedAt: new Date(),
         });
+        if (req.file) {
+            try {
+                await JobApplicationFile_1.default.create({
+                    application: application._id,
+                    originalName: application.cvOriginalName,
+                    mimeType: req.file.mimetype,
+                    size: req.file.size,
+                    data: req.file.buffer,
+                });
+            }
+            catch (fileError) {
+                await JobApplication_1.default.findByIdAndDelete(application._id);
+                throw fileError;
+            }
+        }
         const emailUser = process.env.EMAIL_USER;
         if (emailUser) {
             const htmlContent = `
@@ -77,6 +101,8 @@ const sendJobApplication = async (req, res, next) => {
                 <p><strong>Opportunity:</strong> ${escapeHtml((job === null || job === void 0 ? void 0 : job.title) || application.desiredRole || "Spontaneous application")}</p>
                 <p><strong>Email:</strong> ${escapeHtml(email || "N/A")}</p>
                 <p><strong>Phone:</strong> ${escapeHtml(phone || "N/A")}</p>
+                <p><strong>How they found Creativa Poeta:</strong> ${escapeHtml(discoverySource === "other" ? discoverySourceOther : discoverySource)}</p>
+                <p><strong>CV:</strong> ${req.file ? "Available securely in the Career dashboard" : "Not provided"}</p>
                 <p><strong>Skills:</strong> ${escapeHtml(application.skills || "N/A")}</p>
                 <p><strong>Message:</strong> ${escapeHtml(application.message || "N/A")}</p>
                 <p>Open the Career tab in the Creativa Poeta dashboard to review this application.</p>`;
@@ -94,6 +120,30 @@ const sendJobApplication = async (req, res, next) => {
     }
 };
 exports.sendJobApplication = sendJobApplication;
+const downloadJobApplicationCv = async (req, res, next) => {
+    try {
+        const application = await JobApplication_1.default.findById(req.params.id).select("hasCv cvOriginalName cvMimeType");
+        if (!(application === null || application === void 0 ? void 0 : application.hasCv)) {
+            res.status(404).json({ message: "No CV is attached to this application." });
+            return;
+        }
+        const file = await JobApplicationFile_1.default.findOne({ application: application._id });
+        if (!file) {
+            res.status(404).json({ message: "CV file not found." });
+            return;
+        }
+        const safeName = file.originalName.replace(/[\r\n"\\/]/g, "-");
+        res.setHeader("Content-Type", file.mimeType);
+        res.setHeader("Content-Length", String(file.size));
+        res.setHeader("Content-Disposition", `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`);
+        res.setHeader("Cache-Control", "private, no-store");
+        res.status(200).send(file.data);
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.downloadJobApplicationCv = downloadJobApplicationCv;
 const getJobApplications = async (req, res, next) => {
     try {
         const status = clean(req.query.status, 40);
