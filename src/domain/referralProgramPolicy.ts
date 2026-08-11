@@ -1,11 +1,12 @@
 import crypto from "crypto";
 import { ReferralRewardStatus } from "../models/ReferralReward";
 
-export type ReferralPublicAction = "partner_application" | "partner_lead" | "prospect_referral";
+export type ReferralPublicAction = "partner_application" | "partner_lead" | "direct_referral" | "prospect_referral";
 
 export const REFERRAL_RATE_LIMITS: Record<ReferralPublicAction, { limit: number; windowMs: number }> = {
   partner_application: { limit: 4, windowMs: 60 * 60_000 },
   partner_lead: { limit: 20, windowMs: 60 * 60_000 },
+  direct_referral: { limit: 6, windowMs: 60 * 60_000 },
   prospect_referral: { limit: 8, windowMs: 60 * 60_000 },
 };
 
@@ -24,12 +25,13 @@ export const canTransitionReferralReward = (from: ReferralRewardStatus, to: Refe
 export const calculateReferralReward = (
   eligibleRevenueCents: number,
   rateBasisPoints = 1000,
-  capCents = 20000
+  capCents = 0
 ) => {
   const revenue = Number.isFinite(eligibleRevenueCents) ? Math.max(0, Math.round(eligibleRevenueCents)) : 0;
   const rate = Number.isFinite(rateBasisPoints) ? Math.min(10000, Math.max(0, Math.round(rateBasisPoints))) : 1000;
-  const cap = Number.isFinite(capCents) ? Math.max(0, Math.round(capCents)) : 20000;
-  return Math.min(cap, Math.round((revenue * rate) / 10000));
+  const cap = Number.isFinite(capCents) ? Math.max(0, Math.round(capCents)) : 0;
+  const calculated = Math.round((revenue * rate) / 10000);
+  return cap > 0 ? Math.min(cap, calculated) : calculated;
 };
 
 export const buildReferralRateLimitKey = (

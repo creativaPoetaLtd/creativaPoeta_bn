@@ -10,17 +10,19 @@ import {
 } from "../domain/referralProgramPolicy";
 import ReferralPartner from "../models/ReferralPartner";
 
-test("standard referral reward is 10% and capped at EUR 200", () => {
+test("standard referral reward is 10% without a default cap", () => {
   assert.equal(calculateReferralReward(30000), 3000);
   assert.equal(calculateReferralReward(150000), 15000);
-  assert.equal(calculateReferralReward(300000), 20000);
+  assert.equal(calculateReferralReward(300000), 30000);
+  assert.equal(calculateReferralReward(10000000), 1000000);
   assert.equal(calculateReferralReward(-500), 0);
 });
 
-test("reward calculation clamps unsafe values", () => {
+test("reward calculation supports an explicit optional cap and clamps unsafe values", () => {
   assert.equal(calculateReferralReward(10000, 20000, 50000), 10000);
-  assert.equal(calculateReferralReward(Number.NaN, 1000, 20000), 0);
-  assert.equal(calculateReferralReward(10000, 1000, -1), 0);
+  assert.equal(calculateReferralReward(300000, 1000, 20000), 20000);
+  assert.equal(calculateReferralReward(Number.NaN, 1000, 0), 0);
+  assert.equal(calculateReferralReward(10000, 1000, -1), 1000);
 });
 
 test("reward workflow only allows the controlled forward sequence", () => {
@@ -42,6 +44,7 @@ test("rate-limit keys are scoped, stable per window and never expose the IP", ()
   assert.notEqual(first.key, otherAction.key);
   assert.equal(first.key.includes("203.0.113.42"), false);
   assert.equal(REFERRAL_RATE_LIMITS.partner_application.limit, 4);
+  assert.equal(REFERRAL_RATE_LIMITS.direct_referral.limit, 6);
 });
 
 test("rate-limit policy rejects the first request above the configured threshold", () => {

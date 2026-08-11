@@ -6,7 +6,8 @@ export interface IReferralLead extends Document {
   partner: Types.ObjectId;
   partnerId: string;
   partnerName: string;
-  partnerEmail: string;
+  partnerEmail?: string;
+  partnerPhone?: string;
   companyName: string;
   contactName: string;
   contactEmail?: string;
@@ -42,7 +43,8 @@ const ReferralLeadSchema = new Schema<IReferralLead>(
     partner: { type: Schema.Types.ObjectId, ref: "ReferralPartner", required: true },
     partnerId: { type: String, required: true, trim: true, uppercase: true },
     partnerName: { type: String, required: true, trim: true },
-    partnerEmail: { type: String, required: true, trim: true, lowercase: true },
+    partnerEmail: { type: String, trim: true, lowercase: true },
+    partnerPhone: { type: String, trim: true },
     companyName: { type: String, required: true, trim: true },
     contactName: { type: String, required: true, trim: true },
     contactEmail: { type: String, trim: true, lowercase: true },

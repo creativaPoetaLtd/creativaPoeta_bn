@@ -20,8 +20,10 @@ const canApproveRewards = (0, permissionMiddleware_1.authorizeAdminPermission)("
 const canPayRewards = (0, permissionMiddleware_1.authorizeAdminPermission)("rewards:pay", ["admin_0"]);
 router.post("/partners", referralProgramController_1.applyToReferralProgram);
 router.post("/leads", referralProgramController_1.submitReferralLead);
+router.post("/direct-referrals", referralProgramController_1.submitDirectReferral);
 router.post("/prospect-referrals", referralProgramController_1.submitProspectReferral);
 router.get("/summary", authMiddleware_1.authenticateUser, canRead, referralProgramController_1.getReferralProgramSummary);
+router.post("/manual-entries", authMiddleware_1.authenticateUser, canManage, referralProgramController_1.createManualReferralEntry);
 router.get("/partners", authMiddleware_1.authenticateUser, canRead, referralProgramController_1.getReferralPartners);
 router.patch("/partners/:id", authMiddleware_1.authenticateUser, canApprovePartners, referralProgramController_1.updateReferralPartner);
 router.get("/leads", authMiddleware_1.authenticateUser, canRead, referralProgramController_1.getReferralLeads);

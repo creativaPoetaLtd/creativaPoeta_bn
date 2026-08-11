@@ -7,7 +7,9 @@ export interface IReferralPartner extends Document {
   partnerId?: string;
   referralCode?: string;
   name: string;
-  email: string;
+  email?: string;
+  phone?: string;
+  preferredContact: "email" | "whatsapp" | "phone" | "sms" | "other";
   country: string;
   locale: string;
   profileType: string;
@@ -38,7 +40,9 @@ const ReferralPartnerSchema = new Schema<IReferralPartner>(
     partnerId: { type: String, trim: true, uppercase: true, unique: true, sparse: true },
     referralCode: { type: String, trim: true, unique: true, sparse: true, select: false },
     name: { type: String, required: true, trim: true },
-    email: { type: String, required: true, trim: true, lowercase: true },
+    email: { type: String, trim: true, lowercase: true },
+    phone: { type: String, trim: true },
+    preferredContact: { type: String, enum: ["email", "whatsapp", "phone", "sms", "other"], default: "email" },
     country: { type: String, required: true, trim: true },
     locale: { type: String, trim: true, default: "fr" },
     profileType: { type: String, required: true, trim: true },
@@ -73,6 +77,7 @@ const ReferralPartnerSchema = new Schema<IReferralPartner>(
 );
 
 ReferralPartnerSchema.index({ email: 1, status: 1 });
+ReferralPartnerSchema.index({ phone: 1, status: 1 });
 ReferralPartnerSchema.index({ status: 1, createdAt: -1 });
 ReferralPartnerSchema.index({ program: 1, status: 1 });
 
