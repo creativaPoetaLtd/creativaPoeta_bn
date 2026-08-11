@@ -1,78 +1,125 @@
 import { Request, Response, NextFunction } from "express";
 import sendEmail from "../utils/sendEmail";
 import dotenv from "dotenv";
+import Job from "../models/Job";
+import JobApplication, { JobApplicationStatus } from "../models/JobApplication";
+import { consumeReferralRateLimit } from "../services/referralRateLimitService";
 
 
 dotenv.config();
 
 
 
+const clean = (value: unknown, max = 5000) => String(value || "").trim().slice(0, max);
+const cleanPublicUrl = (value: unknown) => {
+    const candidate = clean(value, 500);
+    if (!candidate) return undefined;
+    try {
+        const parsed = new URL(candidate);
+        return ["http:", "https:"].includes(parsed.protocol) ? parsed.toString() : undefined;
+    } catch {
+        return undefined;
+    }
+};
+const escapeHtml = (value: unknown) => clean(value).replace(/[&<>'"]/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
+}[character] || character));
+
 export const sendJobApplication = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const {
+        if (req.body?.websiteConfirmation) {
+            res.status(201).json({ message: "Application received successfully." });
+            return;
+        }
+        if (!(await consumeReferralRateLimit(req, res, "career_application"))) {
+            res.status(429).json({ message: "Too many applications. Please try again later." });
+            return;
+        }
+
+        const fullName = clean(req.body.fullName, 180);
+        const email = clean(req.body.email, 240).toLowerCase();
+        const phone = clean(req.body.phone, 80);
+        const consentAccepted = req.body.consentAccepted === true;
+        if (!fullName || (!email && !phone) || !consentAccepted) {
+            res.status(400).json({ message: "Name, consent and at least one contact method are required." });
+            return;
+        }
+
+        const job = req.body.jobId ? await Job.findOne({ _id: req.body.jobId, $or: [{ status: "published" }, { status: { $exists: false } }] }) : null;
+        if (req.body.jobId && !job) {
+            res.status(404).json({ message: "This career opportunity is no longer available." });
+            return;
+        }
+
+        const skillsValue = Array.isArray(req.body.skills) ? req.body.skills.join(", ") : req.body.skills;
+        const application = await JobApplication.create({
+            kind: job ? "job" : "spontaneous",
+            job: job?._id,
+            jobTitle: job?.title || clean(req.body.desiredRole || req.body.desiredJobTitles, 180),
             fullName,
-            email,
-            phone,
-            linkedin,
-            currentJobTitle,
-            yearsOfExperience,
-            desiredJobTitles,
-            skills,
-            education,
-            certifications,
-            languages,
-            references,
-            preferredLocation,
-            additionalComments,
-        } = req.body;
+            email: email || undefined,
+            phone: phone || undefined,
+            country: clean(req.body.country || req.body.preferredLocation, 120),
+            desiredRole: clean(req.body.desiredRole || req.body.desiredJobTitles || job?.title, 180),
+            experience: clean(req.body.experience || req.body.yearsOfExperience || req.body.currentJobTitle, 180),
+            skills: clean(skillsValue, 2000),
+            linkedin: cleanPublicUrl(req.body.linkedin),
+            portfolio: cleanPublicUrl(req.body.portfolio),
+            availability: clean(req.body.availability, 180),
+            message: clean(req.body.message || req.body.additionalComments, 5000),
+            locale: clean(req.body.locale, 12),
+            consentAcceptedAt: new Date(),
+        });
 
-        if (!fullName || !email || !phone || !currentJobTitle || !yearsOfExperience || !desiredJobTitles || !skills.length || !education) {
-            res.status(400).json({ message: "All fields are missing." });
-            return;
-        }
-
-        // Construct the HTML content for the email
-        const htmlContent = `
-            <h2>New Job Application</h2>
-            <p><strong>Full Name:</strong> ${fullName}</p>
-            <p><strong>Email:</strong> ${email}</p>
-            <p><strong>Phone:</strong> ${phone}</p>
-            <p><strong>LinkedIn:</strong> ${linkedin || "N/A"}</p>
-            <p><strong>Current Job Title:</strong> ${currentJobTitle}</p>
-            <p><strong>Years of Experience:</strong> ${yearsOfExperience}</p>
-            <p><strong>Desired Job Titles:</strong> ${desiredJobTitles}</p>
-            <p><strong>Skills:</strong> ${skills.length ? skills.join(", ") : "N/A"}</p>
-            <p><strong>Education:</strong> ${education}</p>
-            <p><strong>Certifications:</strong> ${certifications || "N/A"}</p>
-            <p><strong>Languages:</strong> ${languages || "N/A"}</p>
-            <p><strong>References:</strong> ${references || "N/A"}</p>
-            <p><strong>Preferred Location:</strong> ${preferredLocation || "N/A"}</p>
-            <p><strong>Additional Comments:</strong> ${additionalComments || "N/A"}</p>
-        `;
-
-        // Handle the file upload if it exists
-        const file = req.file;
-
-        // Send the email
         const emailUser = process.env.EMAIL_USER;
-        if (!emailUser) {
-            res.status(500).json({ message: "Email user is not defined." });
-            return;
+        if (emailUser) {
+            const htmlContent = `
+                <h2>New ${job ? "job" : "spontaneous"} application</h2>
+                <p><strong>Candidate:</strong> ${escapeHtml(fullName)}</p>
+                <p><strong>Opportunity:</strong> ${escapeHtml(job?.title || application.desiredRole || "Spontaneous application")}</p>
+                <p><strong>Email:</strong> ${escapeHtml(email || "N/A")}</p>
+                <p><strong>Phone:</strong> ${escapeHtml(phone || "N/A")}</p>
+                <p><strong>Skills:</strong> ${escapeHtml(application.skills || "N/A")}</p>
+                <p><strong>Message:</strong> ${escapeHtml(application.message || "N/A")}</p>
+                <p>Open the Career tab in the Creativa Poeta dashboard to review this application.</p>`;
+            try {
+                await sendEmail(emailUser, `Career application — ${fullName}`, htmlContent);
+            } catch (emailError) {
+                console.warn("Career application stored, but notification email failed.", emailError instanceof Error ? emailError.message : "unknown_error");
+            }
         }
 
-            // Send email with attachment
-            await sendEmail(
-                emailUser,
-                "New Job Application",
-                htmlContent,
-            );
+        res.status(201).json({ message: "Application received successfully.", applicationId: application._id });
+    } catch (error) { next(error); }
+};
 
-            
-            await sendEmail(emailUser, "New Job Application", htmlContent);
+export const getJobApplications = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const status = clean(req.query.status, 40);
+        const query = status && status !== "all" ? { status } : {};
+        const applications = await JobApplication.find(query).populate("job", "title status").sort({ createdAt: -1 });
+        res.status(200).json({ applications });
+    } catch (error) { next(error); }
+};
 
-        res.status(200).json({ message: "Job application sent successfully!" });
-    } catch (error) {
-        next(error);
-    }
+export const updateJobApplication = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const allowed: JobApplicationStatus[] = ["new", "reviewing", "shortlisted", "rejected", "archived"];
+        const status = clean(req.body.status, 40) as JobApplicationStatus;
+        if (!allowed.includes(status)) {
+            res.status(400).json({ message: "Invalid application status." });
+            return;
+        }
+        const application = await JobApplication.findByIdAndUpdate(req.params.id, {
+            status,
+            reviewedByEmail: req.user?.email,
+            reviewedAt: new Date(),
+        }, { new: true }).populate("job", "title status");
+        if (!application) {
+            res.status(404).json({ message: "Application not found." });
+            return;
+        }
+        res.status(200).json({ message: "Application updated.", application });
+    } catch (error) { next(error); }
 };
 

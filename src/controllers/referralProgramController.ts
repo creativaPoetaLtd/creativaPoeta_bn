@@ -160,6 +160,7 @@ export const submitReferralLead = async (req: Request, res: Response, next: Next
       return;
     }
 
+    const clientType = req.body?.clientType === "person" ? "person" : "company";
     const companyName = clean(req.body?.companyName, 220);
     const contactName = clean(req.body?.contactName, 200);
     const contactEmail = cleanEmail(req.body?.contactEmail);
@@ -170,11 +171,11 @@ export const submitReferralLead = async (req: Request, res: Response, next: Next
     const needDescription = clean(req.body?.needDescription, 3000);
     const relationship = clean(req.body?.relationship, 200);
     const consentStatus = req.body?.consentStatus === "agreed" ? "agreed" : "not_yet";
-    const introductionMethod = clean(req.body?.introductionMethod, 120);
+    const introductionMethod = clean(req.body?.introductionMethod, 120) || "partner_private_form";
     const introductionDetails = clean(req.body?.introductionDetails, 1500);
     const locale = clean(req.body?.locale, 12) || partner.locale || "fr";
 
-    if (!companyName || !contactName || !serviceNeeded || !needDescription || !relationship || !introductionMethod) {
+    if ((clientType === "company" && !companyName) || !contactName || !serviceNeeded || !relationship) {
       res.status(400).json({ message: "Required referral fields are missing." });
       return;
     }
@@ -189,8 +190,10 @@ export const submitReferralLead = async (req: Request, res: Response, next: Next
 
     const duplicateFilters: Record<string, unknown>[] = [];
     if (contactEmail) duplicateFilters.push({ contactEmail });
+    if (contactPhone) duplicateFilters.push({ contactPhone });
     if (website) duplicateFilters.push({ website });
-    duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+    if (companyName) duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+    if (clientType === "person") duplicateFilters.push({ clientType: "person", contactName: new RegExp(`^${escapeRegex(contactName)}$`, "i") });
     const possibleDuplicate = await ReferralLead.findOne({ $or: duplicateFilters }).select("_id");
     const initialStatus: ReferralLeadStatus = consentStatus === "agreed" ? (possibleDuplicate ? "under_review" : "submitted") : "waiting_for_introduction";
 
@@ -200,6 +203,7 @@ export const submitReferralLead = async (req: Request, res: Response, next: Next
       partnerName: partner.name,
       partnerEmail: partner.email,
       partnerPhone: partner.phone,
+      clientType,
       companyName,
       contactName,
       contactEmail,
@@ -221,12 +225,13 @@ export const submitReferralLead = async (req: Request, res: Response, next: Next
     });
 
     if (partner.status === "approved") partner.status = "active";
-    partner.activity.push({ type: "note", message: `Referral submitted for ${companyName}`, at: new Date() });
+    const clientLabel = companyName || contactName;
+    partner.activity.push({ type: "note", message: `Referral submitted for ${clientLabel}`, at: new Date() });
     await partner.save();
 
     const emailSent = await sendAdminNotice(
-      `New referral - ${companyName}`,
-      `<h2>New CPRPP referral</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Company:</strong> ${escapeHtml(companyName)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)}</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p><p><strong>Consent:</strong> ${escapeHtml(consentStatus)}</p>`
+      `New referral - ${clientLabel}`,
+      `<h2>New client introduction</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Client type:</strong> ${escapeHtml(clientType)}</p><p><strong>Client:</strong> ${escapeHtml(clientLabel)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)}</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p><p><strong>Consent:</strong> ${escapeHtml(consentStatus)}</p>`
     );
     res.status(201).json({ leadId: lead._id, status: lead.status, emailSent });
   } catch (error) {
@@ -255,6 +260,7 @@ export const submitDirectReferral = async (req: Request, res: Response, next: Ne
     const locale = clean(req.body?.locale, 12) || "fr";
     const termsAccepted = req.body?.termsAccepted === true;
 
+    const clientType = req.body?.clientType === "person" ? "person" : "company";
     const companyName = clean(req.body?.companyName, 220);
     const contactName = clean(req.body?.contactName, 200);
     const contactEmail = cleanEmail(req.body?.contactEmail);
@@ -265,14 +271,14 @@ export const submitDirectReferral = async (req: Request, res: Response, next: Ne
     const needDescription = clean(req.body?.needDescription, 3000);
     const relationship = clean(req.body?.relationship, 200);
     const consentStatus = req.body?.consentStatus === "agreed" ? "agreed" : "not_yet";
-    const introductionMethod = clean(req.body?.introductionMethod, 120);
+    const introductionMethod = clean(req.body?.introductionMethod, 120) || "direct_introduction_form";
     const introductionDetails = clean(req.body?.introductionDetails, 1500);
 
     if (!referrerName || (!referrerEmail && !referrerPhone) || (referrerEmail && !emailIsValid(referrerEmail)) || !referrerCountry || !termsAccepted) {
       res.status(400).json({ message: "Your required details and acceptance of the program terms are missing." });
       return;
     }
-    if (!companyName || !contactName || !serviceNeeded || !needDescription || !relationship || !introductionMethod) {
+    if ((clientType === "company" && !companyName) || !contactName || !serviceNeeded || !relationship) {
       res.status(400).json({ message: "Required client introduction fields are missing." });
       return;
     }
@@ -322,8 +328,10 @@ export const submitDirectReferral = async (req: Request, res: Response, next: Ne
 
     const duplicateFilters: Record<string, unknown>[] = [];
     if (contactEmail) duplicateFilters.push({ contactEmail });
+    if (contactPhone) duplicateFilters.push({ contactPhone });
     if (website) duplicateFilters.push({ website });
-    duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+    if (companyName) duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+    if (clientType === "person") duplicateFilters.push({ clientType: "person", contactName: new RegExp(`^${escapeRegex(contactName)}$`, "i") });
     const possibleDuplicate = await ReferralLead.findOne({ $or: duplicateFilters }).select("_id");
     const initialStatus: ReferralLeadStatus = consentStatus === "agreed"
       ? (possibleDuplicate ? "under_review" : "submitted")
@@ -335,6 +343,7 @@ export const submitDirectReferral = async (req: Request, res: Response, next: Ne
       partnerName: partner.name,
       partnerEmail: partner.email,
       partnerPhone: partner.phone,
+      clientType,
       companyName,
       contactName,
       contactEmail,
@@ -356,12 +365,13 @@ export const submitDirectReferral = async (req: Request, res: Response, next: Ne
     });
 
     if (partner.status === "approved") partner.status = "active";
-    partner.activity.push({ type: "note", message: `Client introduction submitted for ${companyName}`, at: new Date() });
+    const clientLabel = companyName || contactName;
+    partner.activity.push({ type: "note", message: `Client introduction submitted for ${clientLabel}`, at: new Date() });
     await partner.save();
 
     const emailSent = await sendAdminNotice(
-      `New direct client introduction - ${companyName}`,
-      `<h2>New client introduction and program registration</h2><p><strong>Introducer:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Introducer contact:</strong> ${escapeHtml(partner.email || partner.phone || "Not provided")}</p><p><strong>Company:</strong> ${escapeHtml(companyName)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)}</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p><p><strong>Consent:</strong> ${escapeHtml(consentStatus)}</p>`
+      `New direct client introduction - ${clientLabel}`,
+      `<h2>New client introduction and program registration</h2><p><strong>Introducer:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Introducer contact:</strong> ${escapeHtml(partner.email || partner.phone || "Not provided")}</p><p><strong>Client type:</strong> ${escapeHtml(clientType)}</p><p><strong>Client:</strong> ${escapeHtml(clientLabel)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)}</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p><p><strong>Consent:</strong> ${escapeHtml(consentStatus)}</p>`
     );
     res.status(201).json({
       leadId: lead._id,
@@ -392,6 +402,7 @@ export const submitProspectReferral = async (req: Request, res: Response, next: 
       return;
     }
 
+    const clientType = req.body?.clientType === "person" ? "person" : "company";
     const companyName = clean(req.body?.companyName, 220);
     const contactName = clean(req.body?.contactName, 200);
     const contactEmail = cleanEmail(req.body?.contactEmail);
@@ -401,12 +412,16 @@ export const submitProspectReferral = async (req: Request, res: Response, next: 
     const budgetRange = clean(req.body?.budgetRange, 100);
     const needDescription = clean(req.body?.needDescription, 3000);
     const locale = clean(req.body?.locale, 12) || "fr";
-    if (!companyName || !contactName || !emailIsValid(contactEmail) || !serviceNeeded || !needDescription || req.body?.contactConsent !== true) {
+    if ((clientType === "company" && !companyName) || !contactName || (!contactEmail && !contactPhone) || (contactEmail && !emailIsValid(contactEmail)) || !serviceNeeded || req.body?.contactConsent !== true) {
       res.status(400).json({ message: "Required fields and permission to contact you are missing." });
       return;
     }
 
-    const duplicateFilters: Record<string, unknown>[] = [{ contactEmail }, { companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") }];
+    const duplicateFilters: Record<string, unknown>[] = [];
+    if (contactEmail) duplicateFilters.push({ contactEmail });
+    if (contactPhone) duplicateFilters.push({ contactPhone });
+    if (companyName) duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+    if (clientType === "person") duplicateFilters.push({ clientType: "person", contactName: new RegExp(`^${escapeRegex(contactName)}$`, "i") });
     if (website) duplicateFilters.push({ website });
     const possibleDuplicate = await ReferralLead.findOne({ $or: duplicateFilters }).select("_id");
     const lead = await ReferralLead.create({
@@ -415,6 +430,7 @@ export const submitProspectReferral = async (req: Request, res: Response, next: 
       partnerName: partner.name,
       partnerEmail: partner.email,
       partnerPhone: partner.phone,
+      clientType,
       companyName,
       contactName,
       contactEmail,
@@ -435,11 +451,12 @@ export const submitProspectReferral = async (req: Request, res: Response, next: 
       ],
     });
     if (partner.status === "approved") partner.status = "active";
-    partner.activity.push({ type: "note", message: `Prospect referral received for ${companyName}`, at: new Date() });
+    const clientLabel = companyName || contactName;
+    partner.activity.push({ type: "note", message: `Prospect referral received for ${clientLabel}`, at: new Date() });
     await partner.save();
     const emailSent = await sendAdminNotice(
-      `New prospect-confirmed referral - ${companyName}`,
-      `<h2>New prospect-confirmed CPRPP referral</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Company:</strong> ${escapeHtml(companyName)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)} (${escapeHtml(contactEmail)})</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p>`
+      `New prospect-confirmed referral - ${clientLabel}`,
+      `<h2>New prospect-confirmed client introduction</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Client type:</strong> ${escapeHtml(clientType)}</p><p><strong>Client:</strong> ${escapeHtml(clientLabel)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)} (${escapeHtml(contactEmail || contactPhone)})</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p>`
     );
     res.status(201).json({ leadId: lead._id, status: lead.status, emailSent });
   } catch (error) {
@@ -530,6 +547,7 @@ export const createManualReferralEntry = async (req: Request, res: Response): Pr
 
     let lead = null;
     if (includeClient) {
+      const clientType = req.body?.clientType === "person" ? "person" : "company";
       const companyName = clean(req.body?.companyName, 220);
       const contactName = clean(req.body?.contactName, 200);
       const contactEmail = cleanEmail(req.body?.contactEmail);
@@ -541,7 +559,7 @@ export const createManualReferralEntry = async (req: Request, res: Response): Pr
       const introductionMethod = clean(req.body?.introductionMethod, 120) || "manual_admin_entry";
       const consentStatus = req.body?.consentStatus === "agreed" ? "agreed" : "not_yet";
 
-      if (!companyName || !contactName || (!contactEmail && !contactPhone) || (contactEmail && !emailIsValid(contactEmail)) || !serviceNeeded || !needDescription) {
+      if ((clientType === "company" && !companyName) || !contactName || (!contactEmail && !contactPhone) || (contactEmail && !emailIsValid(contactEmail)) || !serviceNeeded) {
         res.status(400).json({ message: "Complete the required client fields and provide a client email or phone number." });
         return;
       }
@@ -550,7 +568,8 @@ export const createManualReferralEntry = async (req: Request, res: Response): Pr
       if (contactEmail) duplicateFilters.push({ contactEmail });
       if (contactPhone) duplicateFilters.push({ contactPhone });
       if (website) duplicateFilters.push({ website });
-      duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+      if (companyName) duplicateFilters.push({ companyName: new RegExp(`^${escapeRegex(companyName)}$`, "i") });
+      if (clientType === "person") duplicateFilters.push({ clientType: "person", contactName: new RegExp(`^${escapeRegex(contactName)}$`, "i") });
       const possibleDuplicate = await ReferralLead.findOne({ $or: duplicateFilters }).select("_id");
       const status: ReferralLeadStatus = consentStatus === "agreed"
         ? (possibleDuplicate ? "under_review" : "submitted")
@@ -562,6 +581,7 @@ export const createManualReferralEntry = async (req: Request, res: Response): Pr
         partnerName: partner.name,
         partnerEmail: partner.email,
         partnerPhone: partner.phone,
+        clientType,
         companyName,
         contactName,
         contactEmail,
@@ -581,7 +601,7 @@ export const createManualReferralEntry = async (req: Request, res: Response): Pr
           ...(possibleDuplicate ? [{ type: "note" as const, message: "Possible duplicate detected; manual review required", actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() }] : []),
         ],
       });
-      partner.activity.push({ type: "note", message: `Manual client introduction recorded for ${companyName}`, actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() });
+      partner.activity.push({ type: "note", message: `Manual client introduction recorded for ${companyName || contactName}`, actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() });
     }
 
     await partner.save();

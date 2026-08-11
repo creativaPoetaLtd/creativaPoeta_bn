@@ -40,11 +40,13 @@ const JobSchema = new mongoose_1.Schema({
         required: [true, 'Job title is required'],
         trim: true
     },
+    summary: { type: String, trim: true, maxlength: 500 },
     company: {
         type: String,
         required: [true, 'Company name is required'],
         trim: true
     },
+    department: { type: String, trim: true, maxlength: 120 },
     location: {
         type: String,
         required: [true, 'Location is required'],
@@ -76,9 +78,12 @@ const JobSchema = new mongoose_1.Schema({
     },
     howToApply: {
         type: String,
-        required: [true, 'Application instructions are required']
-    }
+        default: 'Apply through the Creativa Poeta Career page.'
+    },
+    status: { type: String, enum: ['draft', 'published', 'closed'], default: 'published', index: true },
+    applicationDeadline: { type: Date }
 }, {
     timestamps: true
 });
+JobSchema.index({ status: 1, createdAt: -1 });
 exports.default = mongoose_1.default.model("Job", JobSchema);

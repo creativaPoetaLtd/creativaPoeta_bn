@@ -1,40 +1,42 @@
 import { Request, Response, NextFunction } from "express";
-import Job from "../models/Job";
+import Job, { JobStatus, JobType } from "../models/Job";
+
+const allowedTypes: JobType[] = ["fulltime", "parttime", "internship", "contract"];
+const allowedStatuses: JobStatus[] = ["draft", "published", "closed"];
+const cleanList = (value: unknown) => (Array.isArray(value) ? value : value ? [value] : [])
+    .map((item) => String(item).trim())
+    .filter(Boolean)
+    .slice(0, 30);
+
+const buildJobPayload = (body: Record<string, unknown>, partial = false) => {
+    const payload: Record<string, unknown> = {};
+    ["title", "summary", "company", "department", "location", "description", "howToApply"].forEach((field) => {
+        if (!partial || body[field] !== undefined) payload[field] = String(body[field] || "").trim();
+    });
+    if (!partial || body.type !== undefined) payload.type = allowedTypes.includes(body.type as JobType) ? body.type : "contract";
+    if (!partial || body.status !== undefined) payload.status = allowedStatuses.includes(body.status as JobStatus) ? body.status : "draft";
+    if (!partial || body.isRemote !== undefined) payload.isRemote = Boolean(body.isRemote);
+    ["responsibilities", "requirements", "benefits"].forEach((field) => {
+        if (!partial || body[field] !== undefined) payload[field] = cleanList(body[field]);
+    });
+    if (!partial || body.applicationDeadline !== undefined) {
+        payload.applicationDeadline = body.applicationDeadline ? new Date(String(body.applicationDeadline)) : undefined;
+    }
+    return payload;
+};
 
 // Create a new job
 export const createJob = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-
-        const {
-            title,
-            company,
-            location,
-            type,
-            description,
-            responsibilities,
-            requirements,
-            benefits,
-            isRemote,
-            howToApply
-        } = req.body;
-
-        const job = new Job({
-            title,
-            company,
-            location,
-            type,
-            description,
-            responsibilities: Array.isArray(responsibilities) ? responsibilities : [responsibilities],
-            requirements: Array.isArray(requirements) ? requirements : [requirements],
-            benefits: Array.isArray(benefits) ? benefits : [benefits],
-            isRemote,
-            howToApply
-        });
-
-        await job.save();
+        const payload = buildJobPayload(req.body || {});
+        if (!payload.title || !payload.company || !payload.location || !payload.description) {
+            res.status(400).json({ message: "Title, company, location and description are required." });
+            return;
+        }
+        const job = await Job.create(payload);
 
         res.status(201).json({
-            message: "Job created successfully",
+            message: "Career opportunity created successfully.",
             job
         });
     } catch (error) {
@@ -45,11 +47,24 @@ export const createJob = async (req: Request, res: Response, next: NextFunction)
 // Get all jobs
 export const getAllJobs = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const jobs = await Job.find().sort({ createdAt: -1 });
+        const now = new Date();
+        const jobs = await Job.find({ $and: [
+            { $or: [{ status: "published" }, { status: { $exists: false } }] },
+            { $or: [{ applicationDeadline: { $exists: false } }, { applicationDeadline: null }, { applicationDeadline: { $gte: now } }] },
+        ] }).sort({ createdAt: -1 });
         res.status(200).json({
-            message: "Jobs fetched successfully",
+            message: "Career opportunities fetched successfully.",
             jobs
         });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getAdminJobs = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const jobs = await Job.find().sort({ createdAt: -1 });
+        res.status(200).json({ message: "Career opportunities fetched successfully.", jobs });
     } catch (error) {
         next(error);
     }
@@ -59,12 +74,12 @@ export const getAllJobs = async (_req: Request, res: Response, next: NextFunctio
 export const getJob = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
         const job = await Job.findById(req.params.id);
-        if (!job) {
-            res.status(404).json({ message: "Job not found" });
+        if (!job || (job.status && job.status !== "published")) {
+            res.status(404).json({ message: "Career opportunity not found." });
             return;
         }
         res.status(200).json({
-            message: "Job fetched successfully",
+            message: "Career opportunity fetched successfully.",
             job
         });
     } catch (error) {
@@ -76,19 +91,15 @@ export const getJob = async (req: Request, res: Response, next: NextFunction): P
 export const updateJob = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
 
-        const job = await Job.findByIdAndUpdate(
-            req.params.id,
-            req.body,
-            { new: true, runValidators: true }
-        );
+        const job = await Job.findByIdAndUpdate(req.params.id, buildJobPayload(req.body || {}, true), { new: true, runValidators: true });
 
         if (!job) {
-            res.status(404).json({ message: "Job not found" });
+            res.status(404).json({ message: "Career opportunity not found." });
             return;
         }
 
         res.status(200).json({
-            message: "Job updated successfully",
+            message: "Career opportunity updated successfully.",
             job
         });
     } catch (error) {
@@ -100,14 +111,15 @@ export const updateJob = async (req: Request, res: Response, next: NextFunction)
 export const deleteJob = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
 
-        const job = await Job.findByIdAndDelete(req.params.id);
+        const job = await Job.findByIdAndUpdate(req.params.id, { status: "closed" }, { new: true });
         if (!job) {
-            res.status(404).json({ message: "Job not found" });
+            res.status(404).json({ message: "Career opportunity not found." });
             return;
         }
 
         res.status(200).json({
-            message: "Job deleted successfully"
+            message: "Career opportunity closed successfully.",
+            job
         });
     } catch (error) {
         next(error);
