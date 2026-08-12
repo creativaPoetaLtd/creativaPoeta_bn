@@ -26,7 +26,13 @@ app.use((_req, res, next) => {
     res.setHeader("Referrer-Policy", "no-referrer");
     next();
 });
-app.use(express_1.default.json({ limit: "64kb", strict: true }));
+app.use(express_1.default.json({
+    limit: "256kb",
+    strict: true,
+    verify: (req, _res, buffer) => {
+        req.rawBody = Buffer.from(buffer);
+    },
+}));
 app.get("/", (req, res) => {
     res.setHeader("X-CP-Commit", process.env.VERCEL_GIT_COMMIT_SHA || "local");
     res.send("Creativa Poeta Backend is running ✅");

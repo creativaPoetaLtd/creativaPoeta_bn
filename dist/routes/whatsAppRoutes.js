@@ -1,0 +1,23 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const whatsAppController_1 = require("../controllers/whatsAppController");
+const authMiddleware_1 = require("../middleware/authMiddleware");
+const permissionMiddleware_1 = require("../middleware/permissionMiddleware");
+const router = express_1.default.Router();
+const canRead = (0, permissionMiddleware_1.authorizeAdminPermission)("whatsapp:read", ["admin_0", "admin_1", "admin_3"]);
+const canReply = (0, permissionMiddleware_1.authorizeAdminPermission)("whatsapp:reply", ["admin_0", "admin_1", "admin_3"]);
+router.get("/webhook", whatsAppController_1.verifyWhatsAppWebhook);
+router.post("/webhook", whatsAppController_1.receiveWhatsAppWebhook);
+router.get("/summary", authMiddleware_1.authenticateUser, canRead, whatsAppController_1.getWhatsAppSummary);
+router.get("/conversations", authMiddleware_1.authenticateUser, canRead, whatsAppController_1.getWhatsAppConversations);
+router.get("/conversations/:id", authMiddleware_1.authenticateUser, canRead, whatsAppController_1.getWhatsAppConversation);
+router.post("/conversations/:id/claim", authMiddleware_1.authenticateUser, canReply, whatsAppController_1.claimWhatsAppConversation);
+router.post("/conversations/:id/release", authMiddleware_1.authenticateUser, canReply, whatsAppController_1.releaseWhatsAppConversation);
+router.patch("/conversations/:id/status", authMiddleware_1.authenticateUser, canReply, whatsAppController_1.updateWhatsAppConversationStatus);
+router.post("/conversations/:id/notes", authMiddleware_1.authenticateUser, canReply, whatsAppController_1.addWhatsAppConversationNote);
+router.post("/conversations/:id/reply", authMiddleware_1.authenticateUser, canReply, whatsAppController_1.replyToWhatsAppConversation);
+exports.default = router;

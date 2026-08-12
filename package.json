@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "tsc && node --test dist/tests/referralProgramPolicy.test.js",
+    "test": "tsc && node --test dist/tests/*.test.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "dev:local": "ts-node-dev --respawn --transpile-only src/localServer.ts",
     "build": "tsc",
