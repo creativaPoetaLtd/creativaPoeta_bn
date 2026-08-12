@@ -28,7 +28,15 @@ app.use((_req, res, next) => {
   res.setHeader("Referrer-Policy", "no-referrer");
   next();
 });
-app.use(express.json({ limit: "64kb", strict: true }));
+app.use(
+  express.json({
+    limit: "256kb",
+    strict: true,
+    verify: (req, _res, buffer) => {
+      (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+    },
+  })
+);
 
 app.get("/", (req, res) => {
   res.setHeader("X-CP-Commit", process.env.VERCEL_GIT_COMMIT_SHA || "local");
