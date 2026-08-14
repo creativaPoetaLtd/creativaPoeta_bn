@@ -78,3 +78,21 @@ test("private access secrets stay in the URL fragment and are removed from JSON"
   });
   assert.equal(Object.prototype.hasOwnProperty.call(partner.toJSON(), "accessSecretHash"), false);
 });
+
+test("a referral partner application can use a phone number without an email address", () => {
+  const partner = new ReferralPartner({
+    name: "Phone-only Partner",
+    phone: "+32473297112",
+    preferredContact: "whatsapp",
+    country: "BE",
+    locale: "nl",
+    profileType: "individual",
+    program: "referral",
+    termsVersion: "test",
+    termsAcceptedAt: new Date(),
+  });
+
+  assert.equal(partner.email, undefined);
+  assert.equal(partner.phone, "+32473297112");
+  assert.equal(partner.validateSync(), undefined);
+});
