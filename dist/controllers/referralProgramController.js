@@ -20,9 +20,15 @@ const clean = (value, maxLength = 5000) => String(value || "").trim().slice(0, m
 const cleanEmail = (value) => clean(value, 320).toLowerCase();
 const cleanPhone = (value) => clean(value, 80);
 const contactPreferences = ["email", "whatsapp", "phone", "sms", "other"];
-const cleanContactPreference = (value, hasEmail) => {
+const cleanContactPreference = (value, hasEmail, hasPhone) => {
     const candidate = clean(value, 20);
-    return contactPreferences.includes(candidate) ? candidate : (hasEmail ? "email" : "whatsapp");
+    if (!contactPreferences.includes(candidate))
+        return hasEmail ? "email" : "whatsapp";
+    if (candidate === "email" && !hasEmail && hasPhone)
+        return "whatsapp";
+    if (["whatsapp", "phone", "sms"].includes(candidate) && !hasPhone && hasEmail)
+        return "email";
+    return candidate;
 };
 const escapeHtml = (value) => clean(value)
     .replace(/&/g, "&amp;")
@@ -116,7 +122,7 @@ const applyToReferralProgram = async (req, res, next) => {
         const name = clean((_b = req.body) === null || _b === void 0 ? void 0 : _b.name, 200);
         const email = cleanEmail((_c = req.body) === null || _c === void 0 ? void 0 : _c.email);
         const phone = cleanPhone((_d = req.body) === null || _d === void 0 ? void 0 : _d.phone);
-        const preferredContact = cleanContactPreference((_e = req.body) === null || _e === void 0 ? void 0 : _e.preferredContact, Boolean(email));
+        const preferredContact = cleanContactPreference((_e = req.body) === null || _e === void 0 ? void 0 : _e.preferredContact, Boolean(email), Boolean(phone));
         const country = clean((_f = req.body) === null || _f === void 0 ? void 0 : _f.country, 120);
         const locale = clean((_g = req.body) === null || _g === void 0 ? void 0 : _g.locale, 12) || "fr";
         const profileType = clean((_h = req.body) === null || _h === void 0 ? void 0 : _h.profileType, 120);
@@ -277,7 +283,7 @@ const submitDirectReferral = async (req, res, next) => {
         const referrerName = clean((_b = req.body) === null || _b === void 0 ? void 0 : _b.referrerName, 200);
         const referrerEmail = cleanEmail((_c = req.body) === null || _c === void 0 ? void 0 : _c.referrerEmail);
         const referrerPhone = cleanPhone((_d = req.body) === null || _d === void 0 ? void 0 : _d.referrerPhone);
-        const preferredContact = cleanContactPreference((_e = req.body) === null || _e === void 0 ? void 0 : _e.preferredContact, Boolean(referrerEmail));
+        const preferredContact = cleanContactPreference((_e = req.body) === null || _e === void 0 ? void 0 : _e.preferredContact, Boolean(referrerEmail), Boolean(referrerPhone));
         const referrerCountry = clean((_f = req.body) === null || _f === void 0 ? void 0 : _f.referrerCountry, 120);
         const referrerProfileType = clean((_g = req.body) === null || _g === void 0 ? void 0 : _g.referrerProfileType, 120) || "individual";
         const referrerWebsite = clean((_h = req.body) === null || _h === void 0 ? void 0 : _h.referrerWebsite, 500);
@@ -515,7 +521,7 @@ const createManualReferralEntry = async (req, res) => {
             const profileType = clean((_j = req.body) === null || _j === void 0 ? void 0 : _j.profileType, 120);
             const locale = clean((_k = req.body) === null || _k === void 0 ? void 0 : _k.locale, 12) || "fr";
             const program = ((_l = req.body) === null || _l === void 0 ? void 0 : _l.program) === "business" ? "business" : "referral";
-            const preferredContact = cleanContactPreference((_m = req.body) === null || _m === void 0 ? void 0 : _m.preferredContact, Boolean(email));
+            const preferredContact = cleanContactPreference((_m = req.body) === null || _m === void 0 ? void 0 : _m.preferredContact, Boolean(email), Boolean(phone));
             if (!name || (!email && !phone) || (email && !emailIsValid(email)) || !country || !profileType || ((_o = req.body) === null || _o === void 0 ? void 0 : _o.termsAccepted) !== true) {
                 res.status(400).json({ message: "Provide the introducer's name, country, profile, accepted terms and at least an email or phone/WhatsApp number." });
                 return;

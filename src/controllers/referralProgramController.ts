@@ -19,9 +19,12 @@ const cleanEmail = (value: unknown) => clean(value, 320).toLowerCase();
 const cleanPhone = (value: unknown) => clean(value, 80);
 const contactPreferences = ["email", "whatsapp", "phone", "sms", "other"] as const;
 type ContactPreference = typeof contactPreferences[number];
-const cleanContactPreference = (value: unknown, hasEmail: boolean): ContactPreference => {
+const cleanContactPreference = (value: unknown, hasEmail: boolean, hasPhone: boolean): ContactPreference => {
   const candidate = clean(value, 20) as ContactPreference;
-  return contactPreferences.includes(candidate) ? candidate : (hasEmail ? "email" : "whatsapp");
+  if (!contactPreferences.includes(candidate)) return hasEmail ? "email" : "whatsapp";
+  if (candidate === "email" && !hasEmail && hasPhone) return "whatsapp";
+  if (["whatsapp", "phone", "sms"].includes(candidate) && !hasPhone && hasEmail) return "email";
+  return candidate;
 };
 const escapeHtml = (value: unknown) => clean(value)
   .replace(/&/g, "&amp;")
@@ -126,7 +129,7 @@ export const applyToReferralProgram = async (req: Request, res: Response, next: 
     const name = clean(req.body?.name, 200);
     const email = cleanEmail(req.body?.email);
     const phone = cleanPhone(req.body?.phone);
-    const preferredContact = cleanContactPreference(req.body?.preferredContact, Boolean(email));
+    const preferredContact = cleanContactPreference(req.body?.preferredContact, Boolean(email), Boolean(phone));
     const country = clean(req.body?.country, 120);
     const locale = clean(req.body?.locale, 12) || "fr";
     const profileType = clean(req.body?.profileType, 120);
@@ -294,7 +297,7 @@ export const submitDirectReferral = async (req: Request, res: Response, next: Ne
     const referrerName = clean(req.body?.referrerName, 200);
     const referrerEmail = cleanEmail(req.body?.referrerEmail);
     const referrerPhone = cleanPhone(req.body?.referrerPhone);
-    const preferredContact = cleanContactPreference(req.body?.preferredContact, Boolean(referrerEmail));
+    const preferredContact = cleanContactPreference(req.body?.preferredContact, Boolean(referrerEmail), Boolean(referrerPhone));
     const referrerCountry = clean(req.body?.referrerCountry, 120);
     const referrerProfileType = clean(req.body?.referrerProfileType, 120) || "individual";
     const referrerWebsite = clean(req.body?.referrerWebsite, 500);
@@ -528,7 +531,7 @@ export const createManualReferralEntry = async (req: Request, res: Response): Pr
       const profileType = clean(req.body?.profileType, 120);
       const locale = clean(req.body?.locale, 12) || "fr";
       const program = req.body?.program === "business" ? "business" : "referral";
-      const preferredContact = cleanContactPreference(req.body?.preferredContact, Boolean(email));
+      const preferredContact = cleanContactPreference(req.body?.preferredContact, Boolean(email), Boolean(phone));
 
       if (!name || (!email && !phone) || (email && !emailIsValid(email)) || !country || !profileType || req.body?.termsAccepted !== true) {
         res.status(400).json({ message: "Provide the introducer's name, country, profile, accepted terms and at least an email or phone/WhatsApp number." });

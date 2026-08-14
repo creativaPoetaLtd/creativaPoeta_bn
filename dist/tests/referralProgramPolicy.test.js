@@ -69,3 +69,19 @@ const ReferralPartner_1 = __importDefault(require("../models/ReferralPartner"));
     });
     strict_1.default.equal(Object.prototype.hasOwnProperty.call(partner.toJSON(), "accessSecretHash"), false);
 });
+(0, node_test_1.default)("a referral partner application can use a phone number without an email address", () => {
+    const partner = new ReferralPartner_1.default({
+        name: "Phone-only Partner",
+        phone: "+32473297112",
+        preferredContact: "whatsapp",
+        country: "BE",
+        locale: "nl",
+        profileType: "individual",
+        program: "referral",
+        termsVersion: "test",
+        termsAcceptedAt: new Date(),
+    });
+    strict_1.default.equal(partner.email, undefined);
+    strict_1.default.equal(partner.phone, "+32473297112");
+    strict_1.default.equal(partner.validateSync(), undefined);
+});
