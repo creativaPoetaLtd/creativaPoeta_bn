@@ -7,8 +7,6 @@ interface BrandedEmailOptions {
 
 const SITE_URL = "https://creativapoeta.com";
 const CONTACT_EMAIL = "contact@creativapoeta.com";
-const PHONE_LABEL = "+32 473 29 71 12";
-const PHONE_URL = "tel:+32473297112";
 
 export const escapeHtml = (value = "") =>
   value
@@ -136,9 +134,6 @@ export const renderBrandedEmail = ({
                 </div>
                 <div style="margin:2px 0 0;">
                   <a href="${SITE_URL}" style="color:#526074;text-decoration:none;word-break:break-word;">www.creativapoeta.com</a>
-                </div>
-                <div style="margin:2px 0 0;">
-                  <a href="${PHONE_URL}" style="color:#526074;text-decoration:none;white-space:nowrap;">${PHONE_LABEL}</a>
                 </div>
               </td>
             </tr>

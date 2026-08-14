@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.markReferralRewardPaid = exports.updateReferralRewardStatus = exports.upsertReferralReward = exports.getReferralRewards = exports.claimReferralLead = exports.updateReferralLead = exports.getReferralLeads = exports.updateReferralPartner = exports.getReferralPartners = exports.getReferralProgramSummary = exports.createManualReferralEntry = exports.submitProspectReferral = exports.submitDirectReferral = exports.submitReferralLead = exports.applyToReferralProgram = void 0;
+exports.markReferralRewardPaid = exports.updateReferralRewardStatus = exports.upsertReferralReward = exports.getReferralRewards = exports.claimReferralLead = exports.updateReferralLead = exports.getReferralLeads = exports.updateReferralPartner = exports.getReferralPartners = exports.getReferralProgramSummary = exports.createManualReferralEntry = exports.submitProspectReferral = exports.submitDirectReferral = exports.submitReferralLead = exports.applyToReferralProgram = exports.renderPartnerApprovalEmail = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 const ReferralLead_1 = __importDefault(require("../models/ReferralLead"));
 const ReferralPartner_1 = __importDefault(require("../models/ReferralPartner"));
@@ -72,6 +72,36 @@ const sendAdminNotice = async (subject, html) => {
         return false;
     }
 };
+const renderNonClickableUrl = (url) => {
+    const escapedUrl = escapeHtml(url);
+    const schemeSeparator = escapedUrl.indexOf("//");
+    if (schemeSeparator < 0)
+        return escapedUrl;
+    return `<span>${escapedUrl.slice(0, schemeSeparator)}</span><span>${escapedUrl.slice(schemeSeparator)}</span>`;
+};
+const renderPartnerApprovalEmail = ({ partnerName, partnerId, accessUrl, shareUrl, }) => `
+  <h2 style="margin:0 0 18px;color:#101828;font-size:26px;line-height:1.25;">Your application has been approved</h2>
+  <p style="margin:0 0 14px;">Hello ${escapeHtml(partnerName)},</p>
+  <p style="margin:0 0 22px;">Welcome to the Creativa Poeta client-introduction program. The two items below have different purposes.</p>
+
+  <div style="margin:0 0 18px;padding:20px;border:1px solid #d0d5dd;border-radius:14px;background:#f8fafc;">
+    <div style="margin:0 0 6px;color:#b4852b;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">Your private access</div>
+    <h3 style="margin:0 0 8px;color:#101828;font-size:19px;">Present a client to Creativa Poeta</h3>
+    <p style="margin:0 0 16px;color:#475467;">This personal, secure link is for you only. Open it when you have found a person or company that needs digital services, then use the protected form to send us their details. Do not share this link.</p>
+    <a href="${escapeHtml(accessUrl)}" style="display:inline-block;padding:12px 18px;border-radius:9px;background:#071a33;color:#ffffff;text-decoration:none;font-weight:800;">Open my secure form&nbsp;&nbsp;&rarr;</a>
+  </div>
+
+  <div style="margin:0 0 18px;padding:20px;border:1px solid #e3b323;border-radius:14px;background:#fffaf0;">
+    <div style="margin:0 0 6px;color:#8a6413;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">Link to copy and share</div>
+    <h3 style="margin:0 0 8px;color:#101828;font-size:19px;">Invite a potential client to complete the request</h3>
+    <p style="margin:0 0 14px;color:#475467;">This public link is not a form for you. Copy it and send it to a person or company interested in Creativa Poeta services. They will complete their own request, which will automatically be associated with your Partner ID.</p>
+    <div style="padding:13px 14px;border:1px dashed #b4852b;border-radius:9px;background:#ffffff;color:#182640;font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.55;overflow-wrap:anywhere;user-select:all;">${renderNonClickableUrl(shareUrl)}</div>
+    <div style="margin:10px 0 0;color:#8a6413;font-size:13px;font-weight:800;">&#10697;&nbsp; Select the link above, copy it, then share it by WhatsApp, email, SMS or social media.</div>
+  </div>
+
+  <p style="margin:0;color:#475467;"><strong>Partner ID:</strong> ${escapeHtml(partnerId)}</p>
+`;
+exports.renderPartnerApprovalEmail = renderPartnerApprovalEmail;
 const applyToReferralProgram = async (req, res, next) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
     try {
@@ -701,7 +731,12 @@ const updateReferralPartner = async (req, res) => {
             shareUrl = `${FRONTEND_URL}/referral-partners?ref=${encodeURIComponent(partner.referralCode || "")}#referred-business`;
             if (partner.email) {
                 try {
-                    await (0, sendEmail_1.default)(partner.email, "Your Creativa Poeta client-introduction program access", `<h2>Your application has been approved</h2><p><strong>Partner ID:</strong> ${escapeHtml(partner.partnerId)}</p><p><a href="${accessUrl}">Open your secure client-introduction form</a></p><p><a href="${shareUrl}">Copy your client invitation link</a></p><p>You may also receive these links through your preferred contact channel. Keep the secure access link private.</p>`);
+                    await (0, sendEmail_1.default)(partner.email, "Your Creativa Poeta client-introduction program access", (0, exports.renderPartnerApprovalEmail)({
+                        partnerName: partner.name,
+                        partnerId: partner.partnerId || "",
+                        accessUrl,
+                        shareUrl,
+                    }));
                     emailSent = true;
                 }
                 catch (error) {
