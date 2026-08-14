@@ -5,6 +5,13 @@ import ReferralRateLimit from "../models/ReferralRateLimit";
 const getClientIp = (req: Request) => String(req.ip || req.socket.remoteAddress || "unknown").slice(0, 200);
 
 export const consumeReferralRateLimit = async (req: Request, res: Response, action: ReferralPublicAction) => {
+  // Early-stage growth mode: keep the tested limiter available for later, but
+  // do not reject legitimate applications or client introductions by default.
+  // Set REFERRAL_RATE_LIMIT_ENABLED=true to reactivate the stored policy.
+  if (String(process.env.REFERRAL_RATE_LIMIT_ENABLED || "").toLowerCase() !== "true") {
+    return true;
+  }
+
   const now = Date.now();
   const policy = REFERRAL_RATE_LIMITS[action];
   const secret = process.env.REFERRAL_RATE_LIMIT_SALT || process.env.JWT_SECRET || "cprpp-rate-limit-v1";

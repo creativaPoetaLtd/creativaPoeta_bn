@@ -55,6 +55,10 @@ const ReferralPartnerSchema = new mongoose_1.Schema({
     reviewedAt: { type: Date },
     reviewedBy: { type: String, trim: true, lowercase: true },
     rejectionReason: { type: String, trim: true },
+    accessRecoveryStatus: { type: String, enum: ["pending", "resolved"] },
+    accessRecoveryRequestedAt: { type: Date },
+    accessRecoveryResolvedAt: { type: Date },
+    accessRecoveryRequestCount: { type: Number, default: 0, min: 0 },
     activity: [{
             type: { type: String, enum: ["application", "status", "access", "note"], required: true },
             message: { type: String, required: true },
@@ -75,4 +79,5 @@ ReferralPartnerSchema.index({ email: 1, status: 1 });
 ReferralPartnerSchema.index({ phone: 1, status: 1 });
 ReferralPartnerSchema.index({ status: 1, createdAt: -1 });
 ReferralPartnerSchema.index({ program: 1, status: 1 });
+ReferralPartnerSchema.index({ accessRecoveryStatus: 1, accessRecoveryRequestedAt: -1 });
 exports.default = mongoose_1.default.model("ReferralPartner", ReferralPartnerSchema);

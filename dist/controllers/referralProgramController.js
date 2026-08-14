@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.markReferralRewardPaid = exports.updateReferralRewardStatus = exports.upsertReferralReward = exports.getReferralRewards = exports.claimReferralLead = exports.updateReferralLead = exports.getReferralLeads = exports.updateReferralPartner = exports.getReferralPartners = exports.getReferralProgramSummary = exports.createManualReferralEntry = exports.submitProspectReferral = exports.submitDirectReferral = exports.submitReferralLead = exports.applyToReferralProgram = exports.renderPartnerApprovalEmail = void 0;
+exports.markReferralRewardPaid = exports.updateReferralRewardStatus = exports.upsertReferralReward = exports.getReferralRewards = exports.claimReferralLead = exports.updateReferralLead = exports.getReferralLeads = exports.updateReferralPartner = exports.getReferralPartners = exports.getReferralProgramSummary = exports.createManualReferralEntry = exports.submitProspectReferral = exports.submitDirectReferral = exports.submitReferralLead = exports.requestPartnerAccessRecovery = exports.applyToReferralProgram = exports.renderPartnerApprovalEmail = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 const ReferralLead_1 = __importDefault(require("../models/ReferralLead"));
 const ReferralPartner_1 = __importDefault(require("../models/ReferralPartner"));
@@ -18,7 +18,13 @@ const leadStatuses = ["submitted", "waiting_for_introduction", "under_review", "
 const rewardStatuses = ["waiting_client_payment", "earned", "approved", "scheduled", "paid", "cancelled"];
 const clean = (value, maxLength = 5000) => String(value || "").trim().slice(0, maxLength);
 const cleanEmail = (value) => clean(value, 320).toLowerCase();
-const cleanPhone = (value) => clean(value, 80);
+const cleanPhone = (value) => {
+    const raw = clean(value, 80);
+    if (!raw)
+        return "";
+    const digits = raw.replace(/\D/g, "");
+    return digits ? `${raw.startsWith("+") ? "+" : ""}${digits}` : "";
+};
 const contactPreferences = ["email", "whatsapp", "phone", "sms", "other"];
 const cleanContactPreference = (value, hasEmail, hasPhone) => {
     const candidate = clean(value, 20);
@@ -38,6 +44,10 @@ const escapeHtml = (value) => clean(value)
     .replace(/'/g, "&#039;");
 const emailIsValid = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const phoneLookup = (value) => {
+    const digits = value.replace(/\D/g, "");
+    return new RegExp(`^\\D*${digits.split("").map(escapeRegex).join("\\D*")}\\D*$`);
+};
 const hashSecret = (value) => crypto_1.default.createHash("sha256").update(value).digest("hex");
 const createSecret = () => crypto_1.default.randomBytes(32).toString("hex");
 const getAdminEmail = (req) => { var _a; return cleanEmail((_a = req.user) === null || _a === void 0 ? void 0 : _a.email); };
@@ -138,13 +148,16 @@ const applyToReferralProgram = async (req, res, next) => {
         if (email)
             contactFilters.push({ email });
         if (phone)
-            contactFilters.push({ phone });
+            contactFilters.push({ phone: phoneLookup(phone) });
         const existing = await ReferralPartner_1.default.findOne({
             $or: contactFilters,
-            status: { $in: ["pending", "approved", "active", "suspended"] },
         });
         if (existing) {
-            res.status(201).json({ message: "Application received.", status: "pending" });
+            res.status(200).json({
+                outcome: "already_registered",
+                status: existing.status,
+                recoveryAvailable: true,
+            });
             return;
         }
         const partner = await ReferralPartner_1.default.create({
@@ -166,13 +179,55 @@ const applyToReferralProgram = async (req, res, next) => {
             activity: [{ type: "application", message: `${program} partner application submitted`, at: new Date() }],
         });
         const emailSent = await sendAdminNotice(`New ${program} partner application - ${name}`, `<h2>New client-introduction program application</h2><p><strong>Name:</strong> ${escapeHtml(name)}</p><p><strong>Email:</strong> ${escapeHtml(email || "Not provided")}</p><p><strong>Phone / WhatsApp:</strong> ${escapeHtml(phone || "Not provided")}</p><p><strong>Preferred contact:</strong> ${escapeHtml(preferredContact)}</p><p><strong>Country:</strong> ${escapeHtml(country)}</p><p><strong>Program:</strong> ${escapeHtml(program)}</p>`);
-        res.status(201).json({ applicationId: partner._id, status: partner.status, emailSent });
+        res.status(201).json({ applicationId: partner._id, outcome: "submitted", status: partner.status, emailSent });
     }
     catch (error) {
         next(error);
     }
 };
 exports.applyToReferralProgram = applyToReferralProgram;
+const requestPartnerAccessRecovery = async (req, res, next) => {
+    var _a, _b, _c;
+    try {
+        if (clean((_a = req.body) === null || _a === void 0 ? void 0 : _a.websiteConfirmation, 200)) {
+            res.status(202).json({ outcome: "received" });
+            return;
+        }
+        const email = cleanEmail((_b = req.body) === null || _b === void 0 ? void 0 : _b.email);
+        const phone = cleanPhone((_c = req.body) === null || _c === void 0 ? void 0 : _c.phone);
+        if ((!email && !phone) || (email && !emailIsValid(email))) {
+            res.status(400).json({ message: "Provide the email address or phone/WhatsApp number used for registration." });
+            return;
+        }
+        const contactFilters = [];
+        if (email)
+            contactFilters.push({ email });
+        if (phone)
+            contactFilters.push({ phone: phoneLookup(phone) });
+        const partner = await ReferralPartner_1.default.findOne({
+            $or: contactFilters,
+        });
+        if (partner) {
+            partner.accessRecoveryStatus = "pending";
+            partner.accessRecoveryRequestedAt = new Date();
+            partner.accessRecoveryResolvedAt = undefined;
+            partner.accessRecoveryRequestCount = (partner.accessRecoveryRequestCount || 0) + 1;
+            partner.activity.push({
+                type: "access",
+                message: "Private access link requested from the public registration form",
+                at: new Date(),
+            });
+            await partner.save();
+            await sendAdminNotice(`Private referral access requested - ${partner.name}`, `<h2>Private referral access requested</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId || "Pending approval")} - ${escapeHtml(partner.name)}</p><p><strong>Email:</strong> ${escapeHtml(partner.email || "Not provided")}</p><p><strong>Phone / WhatsApp:</strong> ${escapeHtml(partner.phone || "Not provided")}</p><p>Open Referral &amp; Partners in the dashboard, review this partner and generate a new private link when appropriate.</p>`);
+        }
+        // Keep the public response neutral if a mistyped contact does not match.
+        res.status(202).json({ outcome: "received" });
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.requestPartnerAccessRecovery = requestPartnerAccessRecovery;
 const submitReferralLead = async (req, res, next) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
     try {
@@ -322,10 +377,9 @@ const submitDirectReferral = async (req, res, next) => {
         if (referrerEmail)
             referrerContactFilters.push({ email: referrerEmail });
         if (referrerPhone)
-            referrerContactFilters.push({ phone: referrerPhone });
+            referrerContactFilters.push({ phone: phoneLookup(referrerPhone) });
         let partner = await ReferralPartner_1.default.findOne({
             $or: referrerContactFilters,
-            status: { $in: ["pending", "approved", "active", "suspended"] },
         }).select("+referralCode");
         if ((partner === null || partner === void 0 ? void 0 : partner.status) === "suspended") {
             res.status(403).json({ message: "This program account is currently inactive." });
@@ -530,10 +584,9 @@ const createManualReferralEntry = async (req, res) => {
             if (email)
                 contactFilters.push({ email });
             if (phone)
-                contactFilters.push({ phone });
+                contactFilters.push({ phone: phoneLookup(phone) });
             const duplicatePartner = await ReferralPartner_1.default.findOne({
                 $or: contactFilters,
-                status: { $in: ["pending", "approved", "active", "suspended"] },
             });
             if (duplicatePartner) {
                 res.status(409).json({ message: `This contact already belongs to partner ${duplicatePartner.partnerId || duplicatePartner._id}. Use the existing partner ID instead.` });
@@ -658,15 +711,16 @@ const pagination = (req) => ({
 });
 const getReferralProgramSummary = async (_req, res) => {
     try {
-        const [pendingPartners, activePartners, leadsToReview, wonLeads, rewardsToApprove, paidRewards] = await Promise.all([
+        const [pendingPartners, activePartners, accessRecoveryPending, leadsToReview, wonLeads, rewardsToApprove, paidRewards] = await Promise.all([
             ReferralPartner_1.default.countDocuments({ status: "pending" }),
             ReferralPartner_1.default.countDocuments({ status: { $in: ["approved", "active"] } }),
+            ReferralPartner_1.default.countDocuments({ accessRecoveryStatus: "pending" }),
             ReferralLead_1.default.countDocuments({ status: { $in: ["submitted", "under_review", "waiting_for_introduction"] } }),
             ReferralLead_1.default.countDocuments({ status: "won" }),
             ReferralReward_1.default.countDocuments({ status: "earned" }),
             ReferralReward_1.default.countDocuments({ status: "paid" }),
         ]);
-        res.json({ metrics: { pendingPartners, activePartners, leadsToReview, wonLeads, rewardsToApprove, paidRewards, attention: pendingPartners + leadsToReview + rewardsToApprove } });
+        res.json({ metrics: { pendingPartners, activePartners, accessRecoveryPending, leadsToReview, wonLeads, rewardsToApprove, paidRewards, attention: pendingPartners + accessRecoveryPending + leadsToReview + rewardsToApprove } });
     }
     catch {
         res.status(500).json({ message: "Failed to fetch referral program summary." });
@@ -684,7 +738,7 @@ const getReferralPartners = async (req, res) => {
         if (search)
             filter.$or = ["name", "email", "phone", "country", "partnerId"].map((field) => ({ [field]: new RegExp(escapeRegex(search), "i") }));
         const [partners, total] = await Promise.all([
-            ReferralPartner_1.default.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
+            ReferralPartner_1.default.find(filter).sort({ accessRecoveryRequestedAt: -1, createdAt: -1 }).skip((page - 1) * limit).limit(limit),
             ReferralPartner_1.default.countDocuments(filter),
         ]);
         res.json({ partners, pagination: { currentPage: page, totalPages: Math.max(1, Math.ceil(total / limit)), total, limit } });
@@ -720,6 +774,8 @@ const updateReferralPartner = async (req, res) => {
                 partner.referralCode = await createReferralCode();
             plainSecret = createSecret();
             partner.accessSecretHash = hashSecret(plainSecret);
+            partner.accessRecoveryStatus = "resolved";
+            partner.accessRecoveryResolvedAt = new Date();
         }
         partner.status = status;
         partner.reviewedAt = new Date();

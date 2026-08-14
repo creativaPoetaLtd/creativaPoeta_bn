@@ -34,6 +34,11 @@ const formRoutes: Record<string, string> = {
   "/api/job/apply": "job_application",
   "/api/visibility-audit/technical": "visibility_audit",
   "/api/visibility-audit/interpret": "visibility_audit",
+  "/api/referral-program/partners": "referral_partner_application",
+  "/api/referral-program/partners/recover-access": "referral_access_recovery",
+  "/api/referral-program/leads": "referral_lead",
+  "/api/referral-program/direct-referrals": "direct_referral",
+  "/api/referral-program/prospect-referrals": "referred_client_request",
 };
 
 export const analyticsServerMiddleware = (

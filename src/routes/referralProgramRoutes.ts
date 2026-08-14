@@ -1,6 +1,7 @@
 import express from "express";
 import {
   applyToReferralProgram,
+  requestPartnerAccessRecovery,
   claimReferralLead,
   createManualReferralEntry,
   submitDirectReferral,
@@ -33,6 +34,7 @@ const canApproveRewards = authorizeAdminPermission("rewards:approve", ["admin_0"
 const canPayRewards = authorizeAdminPermission("rewards:pay", ["admin_0"]);
 
 router.post("/partners", applyToReferralProgram);
+router.post("/partners/recover-access", requestPartnerAccessRecovery);
 router.post("/leads", submitReferralLead);
 router.post("/direct-referrals", submitDirectReferral);
 router.post("/prospect-referrals", submitProspectReferral);
