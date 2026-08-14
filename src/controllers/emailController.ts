@@ -363,7 +363,6 @@ const sendOutboundPayload = async (
     title: payload.subject,
     preheader: payload.body.slice(0, 130),
     signature: payload.signature,
-    wrap: false,
     attachments: mailAttachments,
   });
 
@@ -890,7 +889,6 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
       title: replySubject,
       preheader: cleanMessage.slice(0, 130),
       signature: String(signature || "").trim(),
-      wrap: false,
     });
 
     await OutboundEmail.create({
@@ -994,7 +992,6 @@ export const forwardEmail = async (req: Request, res: Response): Promise<void> =
       title: forwardSubject,
       preheader: cleanMessage.slice(0, 130),
       signature: payload.signature,
-      wrap: false,
       attachments: mailAttachments,
     });
 

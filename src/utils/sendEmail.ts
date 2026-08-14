@@ -20,7 +20,6 @@ interface SendEmailOptions {
   replyTo?: string;
   preheader?: string;
   title?: string;
-  wrap?: boolean;
   signature?: string;
 }
 
@@ -132,20 +131,6 @@ const stripHtml = (html = "") =>
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-const escapeHtml = (value = "") =>
-  value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-
-const renderDirectSignature = (signature?: string) => {
-  const cleanSignature = String(signature || "").trim();
-  if (!cleanSignature) return "";
-  return `<p style="margin:24px 0 0;">Best regards,<br />${escapeHtml(cleanSignature).replace(/\n/g, "<br />")}</p>`;
-};
-
 const sendEmail = async (
   to: string | string[],
   subject: string,
@@ -207,16 +192,12 @@ const sendEmail = async (
       process.env.EMAIL_USER;
     const fromEmail = options.fromEmail || defaultFromEmail;
     const fromName = options.fromName || smtpConfig?.fromName || process.env.SMTP_FROM_NAME || "Creativa Poeta";
-    const directSignature = renderDirectSignature(options.signature);
-    const html =
-      options.wrap === false
-        ? `${htmlContent}${directSignature}`
-        : renderBrandedEmail({
-            title: options.title || subject,
-            preheader: options.preheader || stripHtml(htmlContent).slice(0, 130),
-            content: htmlContent,
-            signature: options.signature,
-          });
+    const html = renderBrandedEmail({
+      title: options.title || subject,
+      preheader: options.preheader || stripHtml(htmlContent).slice(0, 130),
+      content: htmlContent,
+      signature: options.signature,
+    });
 
     const result = await transporter.sendMail({
       from: `"${fromName}" <${fromEmail}>`,
