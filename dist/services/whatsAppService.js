@@ -3,9 +3,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.processWhatsAppWebhook = exports.markWhatsAppMessageRead = exports.sendWhatsAppTextMessage = exports.getWhatsAppConfiguration = void 0;
+exports.processWhatsAppWebhook = exports.markWhatsAppMessageRead = exports.sendWhatsAppTemplateMessage = exports.buildWhatsAppTemplatePayload = exports.getWhatsAppTemplateLanguage = exports.sendWhatsAppTextMessage = exports.getWhatsAppConfiguration = void 0;
 const WhatsAppConversation_1 = __importDefault(require("../models/WhatsAppConversation"));
 const WhatsAppMessage_1 = __importDefault(require("../models/WhatsAppMessage"));
+const ReferralPartner_1 = __importDefault(require("../models/ReferralPartner"));
 const whatsAppPolicy_1 = require("../domain/whatsAppPolicy");
 const getGraphApiVersion = () => process.env.WHATSAPP_GRAPH_API_VERSION || "v25.0";
 const getMediaData = (message) => {
@@ -63,6 +64,70 @@ const sendWhatsAppTextMessage = async (to, body) => {
     return { providerMessageId, payload };
 };
 exports.sendWhatsAppTextMessage = sendWhatsAppTextMessage;
+const templateLanguageDefaults = {
+    en: "en_US",
+    fr: "fr",
+    nl: "nl",
+    rw: "rw_RW",
+};
+const getWhatsAppTemplateLanguage = (locale) => {
+    const normalizedLocale = String(locale || "en").trim().toLowerCase();
+    const baseLocale = normalizedLocale.split(/[-_]/)[0] || "en";
+    const environmentKey = `WHATSAPP_TEMPLATE_LANGUAGE_${baseLocale.toUpperCase()}`;
+    return process.env[environmentKey] || templateLanguageDefaults[baseLocale] || templateLanguageDefaults.en;
+};
+exports.getWhatsAppTemplateLanguage = getWhatsAppTemplateLanguage;
+const buildWhatsAppTemplatePayload = ({ to, templateName, languageCode, bodyParameters, }) => ({
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: (0, whatsAppPolicy_1.normalizeWhatsAppId)(to),
+    type: "template",
+    template: {
+        name: templateName,
+        language: { policy: "deterministic", code: languageCode },
+        components: bodyParameters.length
+            ? [{
+                    type: "body",
+                    parameters: bodyParameters.map((text) => ({ type: "text", text: String(text) })),
+                }]
+            : [],
+    },
+});
+exports.buildWhatsAppTemplatePayload = buildWhatsAppTemplatePayload;
+const sendWhatsAppTemplateMessage = async ({ to, templateName, languageCode, bodyParameters, }) => {
+    var _a, _b, _c;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    if (!accessToken || !phoneNumberId) {
+        throw new Error("WhatsApp Cloud API is not configured.");
+    }
+    if (!templateName) {
+        throw new Error("The WhatsApp message template is not configured.");
+    }
+    const response = await fetch(`https://graph.facebook.com/${getGraphApiVersion()}/${encodeURIComponent(phoneNumberId)}/messages`, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify((0, exports.buildWhatsAppTemplatePayload)({
+            to,
+            templateName,
+            languageCode,
+            bodyParameters,
+        })),
+    });
+    const payload = (await response.json().catch(() => ({})));
+    if (!response.ok) {
+        const providerMessage = ((_a = payload === null || payload === void 0 ? void 0 : payload.error) === null || _a === void 0 ? void 0 : _a.message) || `Meta API returned ${response.status}.`;
+        throw new Error(providerMessage);
+    }
+    const providerMessageId = String(((_c = (_b = payload === null || payload === void 0 ? void 0 : payload.messages) === null || _b === void 0 ? void 0 : _b[0]) === null || _c === void 0 ? void 0 : _c.id) || "");
+    if (!providerMessageId)
+        throw new Error("Meta did not return a message identifier.");
+    return { providerMessageId, payload };
+};
+exports.sendWhatsAppTemplateMessage = sendWhatsAppTemplateMessage;
 const markWhatsAppMessageRead = async (providerMessageId) => {
     const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
     const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -173,6 +238,17 @@ const processMessageStatus = async (status) => {
             ...((error === null || error === void 0 ? void 0 : error.code) ? { errorCode: String(error.code) } : {}),
             ...((error === null || error === void 0 ? void 0 : error.title) || (error === null || error === void 0 ? void 0 : error.message)
                 ? { errorMessage: String(error.title || error.message) }
+                : {}),
+        },
+    });
+    await ReferralPartner_1.default.findOneAndUpdate({ "lastNotification.providerMessageId": providerMessageId }, {
+        $set: {
+            "lastNotification.status": nextStatus,
+            "lastNotification.updatedAt": new Date(),
+            ...(nextStatus === "failed"
+                ? {
+                    "lastNotification.error": String((error === null || error === void 0 ? void 0 : error.title) || (error === null || error === void 0 ? void 0 : error.message) || "WhatsApp delivery failed.").slice(0, 500),
+                }
                 : {}),
         },
     });

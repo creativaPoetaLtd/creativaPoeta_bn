@@ -32,6 +32,12 @@ WHATSAPP_PHONE_NUMBER_ID=<Meta phone number ID>
 WHATSAPP_DISPLAY_PHONE_NUMBER=<public Creativa Poeta WhatsApp number>
 WHATSAPP_BUSINESS_ACCOUNT_ID=<Meta WhatsApp Business Account ID>
 WHATSAPP_GRAPH_API_VERSION=v25.0
+WHATSAPP_REFERRAL_APPROVED_TEMPLATE=cp_referral_application_approved
+WHATSAPP_REFERRAL_REJECTED_TEMPLATE=cp_referral_application_rejected
+WHATSAPP_TEMPLATE_LANGUAGE_EN=en
+WHATSAPP_TEMPLATE_LANGUAGE_FR=fr
+WHATSAPP_TEMPLATE_LANGUAGE_NL=nl
+WHATSAPP_TEMPLATE_LANGUAGE_RW=rw_RW
 ```
 
 The Graph API version is configurable so it can be upgraded independently after Meta announces a deprecation.
@@ -70,4 +76,70 @@ Operations administrators receive all three permissions by role. Support & Email
 
 - Inbound text, interactive responses, locations, contacts and media metadata are recorded.
 - Team replies are text messages during Meta's 24-hour customer-service window.
-- The dashboard blocks free-form replies after that window. Approved template creation/sending and direct media download are intentionally left for the next increment.
+- The dashboard blocks free-form replies after that window. Referral approval and rejection notifications use approved Meta templates; direct media download remains outside the current scope.
+
+## 6. Preferred-channel referral notifications
+
+When an applicant selects WhatsApp as the preferred contact channel, approval and rejection messages are sent with an approved Meta template. This is required because an administrative decision can happen outside Meta's 24-hour customer-service window.
+
+Routing rules:
+
+- WhatsApp preferred and available: send the corresponding WhatsApp template.
+- WhatsApp fails and an email is available: send the same decision by email and record that fallback in the dashboard.
+- Email preferred: send by email.
+- Phone, SMS or another channel: record `manual_required` so the team can contact the person manually.
+- The dashboard stores the requested channel, actual delivery channel, provider message ID and the latest delivery status.
+
+Create the following templates in **WhatsApp Manager -> Message templates**. Meta must approve every language before production use.
+
+### Approval template
+
+Name: `cp_referral_application_approved`
+
+Category: Utility
+
+Body parameters, in this exact order:
+
+1. Applicant name
+2. Partner ID
+3. Private client-introduction form URL
+4. Public client invitation URL
+
+Recommended English body:
+
+```text
+Hello {{1}}, your Creativa Poeta client-introducer application has been approved.
+
+Your partner ID is {{2}}.
+
+Use this private link to securely introduce a client to Creativa Poeta: {{3}}
+
+Keep the private link confidential. Do not share it.
+
+Copy and share this public invitation link with a person or business interested in Creativa Poeta: {{4}}
+```
+
+Create equivalent French, Dutch and Kinyarwanda translations under the same template name. The variable positions must remain identical in every language.
+
+### Rejection template
+
+Name: `cp_referral_application_rejected`
+
+Category: Utility
+
+Body parameters, in this exact order:
+
+1. Applicant name
+2. Decision reason
+
+Recommended English body:
+
+```text
+Hello {{1}}, Creativa Poeta has reviewed your client-introducer application. We cannot approve it at this time.
+
+Reason: {{2}}
+
+You may contact Creativa Poeta if you need clarification.
+```
+
+Create equivalent French, Dutch and Kinyarwanda translations under the same template name. If Meta does not offer a requested locale code, set the matching `WHATSAPP_TEMPLATE_LANGUAGE_*` variable to an approved language available on that template.

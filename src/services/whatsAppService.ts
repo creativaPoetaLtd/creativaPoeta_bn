@@ -1,5 +1,6 @@
 import WhatsAppConversation from "../models/WhatsAppConversation";
 import WhatsAppMessage from "../models/WhatsAppMessage";
+import ReferralPartner from "../models/ReferralPartner";
 import {
   buildWhatsAppConversationKey,
   extractWhatsAppMessageText,
@@ -58,6 +59,95 @@ export const sendWhatsAppTextMessage = async (to: string, body: string) => {
         type: "text",
         text: { preview_url: false, body },
       }),
+    }
+  );
+
+  const payload = (await response.json().catch(() => ({}))) as any;
+  if (!response.ok) {
+    const providerMessage = payload?.error?.message || `Meta API returned ${response.status}.`;
+    throw new Error(providerMessage);
+  }
+
+  const providerMessageId = String(payload?.messages?.[0]?.id || "");
+  if (!providerMessageId) throw new Error("Meta did not return a message identifier.");
+  return { providerMessageId, payload };
+};
+
+const templateLanguageDefaults: Record<string, string> = {
+  en: "en_US",
+  fr: "fr",
+  nl: "nl",
+  rw: "rw_RW",
+};
+
+export const getWhatsAppTemplateLanguage = (locale: string) => {
+  const normalizedLocale = String(locale || "en").trim().toLowerCase();
+  const baseLocale = normalizedLocale.split(/[-_]/)[0] || "en";
+  const environmentKey = `WHATSAPP_TEMPLATE_LANGUAGE_${baseLocale.toUpperCase()}`;
+  return process.env[environmentKey] || templateLanguageDefaults[baseLocale] || templateLanguageDefaults.en;
+};
+
+export const buildWhatsAppTemplatePayload = ({
+  to,
+  templateName,
+  languageCode,
+  bodyParameters,
+}: {
+  to: string;
+  templateName: string;
+  languageCode: string;
+  bodyParameters: string[];
+}) => ({
+  messaging_product: "whatsapp",
+  recipient_type: "individual",
+  to: normalizeWhatsAppId(to),
+  type: "template",
+  template: {
+    name: templateName,
+    language: { policy: "deterministic", code: languageCode },
+    components: bodyParameters.length
+      ? [{
+          type: "body",
+          parameters: bodyParameters.map((text) => ({ type: "text", text: String(text) })),
+        }]
+      : [],
+  },
+});
+
+export const sendWhatsAppTemplateMessage = async ({
+  to,
+  templateName,
+  languageCode,
+  bodyParameters,
+}: {
+  to: string;
+  templateName: string;
+  languageCode: string;
+  bodyParameters: string[];
+}) => {
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  if (!accessToken || !phoneNumberId) {
+    throw new Error("WhatsApp Cloud API is not configured.");
+  }
+  if (!templateName) {
+    throw new Error("The WhatsApp message template is not configured.");
+  }
+
+  const response = await fetch(
+    `https://graph.facebook.com/${getGraphApiVersion()}/${encodeURIComponent(phoneNumberId)}/messages`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildWhatsAppTemplatePayload({
+        to,
+        templateName,
+        languageCode,
+        bodyParameters,
+      })),
     }
   );
 
@@ -191,6 +281,23 @@ const processMessageStatus = async (status: any) => {
         ...(error?.code ? { errorCode: String(error.code) } : {}),
         ...(error?.title || error?.message
           ? { errorMessage: String(error.title || error.message) }
+          : {}),
+      },
+    }
+  );
+
+  await ReferralPartner.findOneAndUpdate(
+    { "lastNotification.providerMessageId": providerMessageId },
+    {
+      $set: {
+        "lastNotification.status": nextStatus,
+        "lastNotification.updatedAt": new Date(),
+        ...(nextStatus === "failed"
+          ? {
+              "lastNotification.error": String(
+                error?.title || error?.message || "WhatsApp delivery failed."
+              ).slice(0, 500),
+            }
           : {}),
       },
     }
