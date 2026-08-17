@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { renderPartnerApprovalEmail } from "../controllers/referralProgramController";
+import {
+  getPartnerNotificationCopy,
+  renderPartnerApprovalEmail,
+  renderPartnerRejectionEmail,
+} from "../controllers/referralProgramController";
 import { renderBrandedEmail } from "../utils/emailTemplate";
 
 test("partner approval email separates private access from the public share link", () => {
@@ -27,4 +31,19 @@ test("common branded email signature no longer exposes a telephone number", () =
   assert.equal(html.includes("tel:+32473297112"), false);
   assert.match(html, /contact@creativapoeta\.com/);
   assert.match(html, /www\.creativapoeta\.com/);
+});
+
+test("partner decision emails follow the applicant locale", () => {
+  const french = getPartnerNotificationCopy("fr-BE");
+  const dutch = getPartnerNotificationCopy("nl-BE");
+  const rejection = renderPartnerRejectionEmail({
+    partnerName: "Example Partner",
+    reason: "Informations incomplètes",
+    locale: "fr-BE",
+  });
+
+  assert.match(french.approvedTitle, /approuvée/i);
+  assert.match(dutch.approvedTitle, /goedgekeurd/i);
+  assert.match(rejection, /Informations incomplètes/);
+  assert.match(rejection, /Bonjour Example Partner/);
 });

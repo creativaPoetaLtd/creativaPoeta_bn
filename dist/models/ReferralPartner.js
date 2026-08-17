@@ -59,6 +59,17 @@ const ReferralPartnerSchema = new mongoose_1.Schema({
     accessRecoveryRequestedAt: { type: Date },
     accessRecoveryResolvedAt: { type: Date },
     accessRecoveryRequestCount: { type: Number, default: 0, min: 0 },
+    lastNotification: {
+        kind: { type: String, enum: ["approval", "rejection"] },
+        requestedChannel: { type: String, enum: ["email", "whatsapp", "phone", "sms", "other"] },
+        deliveredChannel: { type: String, enum: ["email", "whatsapp"] },
+        status: { type: String, enum: ["sent", "delivered", "read", "failed", "manual_required"] },
+        fallbackUsed: { type: Boolean, default: false },
+        providerMessageId: { type: String, trim: true },
+        error: { type: String, trim: true, maxlength: 500 },
+        attemptedAt: { type: Date },
+        updatedAt: { type: Date },
+    },
     activity: [{
             type: { type: String, enum: ["application", "status", "access", "note"], required: true },
             message: { type: String, required: true },

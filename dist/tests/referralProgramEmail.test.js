@@ -29,3 +29,16 @@ const emailTemplate_1 = require("../utils/emailTemplate");
     strict_1.default.match(html, /contact@creativapoeta\.com/);
     strict_1.default.match(html, /www\.creativapoeta\.com/);
 });
+(0, node_test_1.default)("partner decision emails follow the applicant locale", () => {
+    const french = (0, referralProgramController_1.getPartnerNotificationCopy)("fr-BE");
+    const dutch = (0, referralProgramController_1.getPartnerNotificationCopy)("nl-BE");
+    const rejection = (0, referralProgramController_1.renderPartnerRejectionEmail)({
+        partnerName: "Example Partner",
+        reason: "Informations incomplètes",
+        locale: "fr-BE",
+    });
+    strict_1.default.match(french.approvedTitle, /approuvée/i);
+    strict_1.default.match(dutch.approvedTitle, /goedgekeurd/i);
+    strict_1.default.match(rejection, /Informations incomplètes/);
+    strict_1.default.match(rejection, /Bonjour Example Partner/);
+});

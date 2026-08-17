@@ -3,13 +3,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.markReferralRewardPaid = exports.updateReferralRewardStatus = exports.upsertReferralReward = exports.getReferralRewards = exports.claimReferralLead = exports.updateReferralLead = exports.getReferralLeads = exports.updateReferralPartner = exports.getReferralPartners = exports.getReferralProgramSummary = exports.createManualReferralEntry = exports.submitProspectReferral = exports.submitDirectReferral = exports.submitReferralLead = exports.requestPartnerAccessRecovery = exports.applyToReferralProgram = exports.renderPartnerApprovalEmail = void 0;
+exports.markReferralRewardPaid = exports.updateReferralRewardStatus = exports.upsertReferralReward = exports.getReferralRewards = exports.claimReferralLead = exports.updateReferralLead = exports.getReferralLeads = exports.updateReferralPartner = exports.getReferralPartners = exports.getReferralProgramSummary = exports.createManualReferralEntry = exports.submitProspectReferral = exports.submitDirectReferral = exports.submitReferralLead = exports.requestPartnerAccessRecovery = exports.applyToReferralProgram = exports.renderPartnerRejectionEmail = exports.renderPartnerApprovalEmail = exports.getPartnerNotificationCopy = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 const ReferralLead_1 = __importDefault(require("../models/ReferralLead"));
 const ReferralPartner_1 = __importDefault(require("../models/ReferralPartner"));
 const ReferralReward_1 = __importDefault(require("../models/ReferralReward"));
 const referralProgramPolicy_1 = require("../domain/referralProgramPolicy");
 const referralRateLimitService_1 = require("../services/referralRateLimitService");
+const referralPartnerNotificationService_1 = require("../services/referralPartnerNotificationService");
 const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
 const TERMS_VERSION = "2026-08-11";
 const FRONTEND_URL = (process.env.FRONTEND_URL || "https://creativapoeta.com").replace(/\/$/, "");
@@ -95,29 +96,120 @@ const renderNonClickableUrl = (url) => {
         return escapedUrl;
     return `<span>${escapedUrl.slice(0, schemeSeparator)}</span><span>${escapedUrl.slice(schemeSeparator)}</span>`;
 };
-const renderPartnerApprovalEmail = ({ partnerName, partnerId, accessUrl, shareUrl, }) => `
-  <h2 style="margin:0 0 18px;color:#101828;font-size:26px;line-height:1.25;">Your application has been approved</h2>
-  <p style="margin:0 0 14px;">Hello ${escapeHtml(partnerName)},</p>
-  <p style="margin:0 0 22px;">Welcome to the Creativa Poeta client-introduction program. The two items below have different purposes.</p>
+const partnerNotificationCopy = {
+    en: {
+        approvalSubject: "Your Creativa Poeta client-introduction program access",
+        approvedTitle: "Your application has been approved",
+        hello: "Hello",
+        welcome: "Welcome to the Creativa Poeta client-introduction program. The two items below have different purposes.",
+        privateLabel: "Your private access",
+        privateTitle: "Present a client to Creativa Poeta",
+        privateText: "This personal, secure link is for you only. Open it when you have found a person or company that needs digital services, then use the protected form to send us their details. Do not share this link.",
+        privateButton: "Open my secure form",
+        shareLabel: "Link to copy and share",
+        shareTitle: "Invite a potential client to complete the request",
+        shareText: "This public link is not a form for you. Copy it and send it to a person or company interested in Creativa Poeta services. Their request will automatically be associated with your Partner ID.",
+        shareHelp: "Select the link above, copy it, then share it by WhatsApp, email, SMS or social media.",
+        partnerId: "Partner ID",
+        rejectionSubject: "Update on your Creativa Poeta partner application",
+        rejectedTitle: "Update on your application",
+        rejectedText: "We reviewed your application to join the Creativa Poeta client-introduction program. It has not been accepted at this time.",
+        reason: "Reason",
+    },
+    fr: {
+        approvalSubject: "Votre accès au programme d’apporteurs de clients Creativa Poeta",
+        approvedTitle: "Votre candidature a été approuvée",
+        hello: "Bonjour",
+        welcome: "Bienvenue dans le programme d’apporteurs de clients Creativa Poeta. Les deux éléments ci-dessous ont des fonctions différentes.",
+        privateLabel: "Votre accès privé",
+        privateTitle: "Présenter un client à Creativa Poeta",
+        privateText: "Ce lien personnel et sécurisé est réservé à votre usage. Ouvrez-le lorsque vous trouvez une personne ou une entreprise qui recherche des services numériques, puis utilisez le formulaire protégé pour nous transmettre ses informations. Ne partagez pas ce lien.",
+        privateButton: "Ouvrir mon formulaire sécurisé",
+        shareLabel: "Lien à copier et à partager",
+        shareTitle: "Inviter un client potentiel à compléter sa demande",
+        shareText: "Ce lien public n’est pas un formulaire pour vous. Copiez-le et envoyez-le à une personne ou une entreprise intéressée par les services de Creativa Poeta. Sa demande sera automatiquement associée à votre identifiant partenaire.",
+        shareHelp: "Sélectionnez le lien ci-dessus, copiez-le, puis partagez-le par WhatsApp, email, SMS ou réseau social.",
+        partnerId: "Identifiant partenaire",
+        rejectionSubject: "Mise à jour de votre candidature partenaire Creativa Poeta",
+        rejectedTitle: "Mise à jour de votre candidature",
+        rejectedText: "Nous avons examiné votre candidature au programme d’apporteurs de clients Creativa Poeta. Elle n’a pas été retenue pour le moment.",
+        reason: "Motif",
+    },
+    nl: {
+        approvalSubject: "Uw toegang tot het klantenaanbrengprogramma van Creativa Poeta",
+        approvedTitle: "Uw aanvraag is goedgekeurd",
+        hello: "Hallo",
+        welcome: "Welkom bij het klantenaanbrengprogramma van Creativa Poeta. De twee onderstaande links hebben elk een ander doel.",
+        privateLabel: "Uw privétoegang",
+        privateTitle: "Stel een klant voor aan Creativa Poeta",
+        privateText: "Deze persoonlijke, beveiligde link is uitsluitend voor u. Open hem wanneer u een persoon of bedrijf kent dat digitale diensten nodig heeft en stuur ons de gegevens via het beveiligde formulier. Deel deze link niet.",
+        privateButton: "Mijn beveiligde formulier openen",
+        shareLabel: "Link om te kopiëren en te delen",
+        shareTitle: "Nodig een mogelijke klant uit om de aanvraag in te vullen",
+        shareText: "Deze openbare link is geen formulier voor u. Kopieer hem en stuur hem naar een persoon of bedrijf met interesse in de diensten van Creativa Poeta. De aanvraag wordt automatisch aan uw partner-ID gekoppeld.",
+        shareHelp: "Selecteer de bovenstaande link, kopieer hem en deel hem via WhatsApp, e-mail, sms of sociale media.",
+        partnerId: "Partner-ID",
+        rejectionSubject: "Update over uw partneraanvraag bij Creativa Poeta",
+        rejectedTitle: "Update over uw aanvraag",
+        rejectedText: "We hebben uw aanvraag voor het klantenaanbrengprogramma van Creativa Poeta beoordeeld. Uw aanvraag is momenteel niet aanvaard.",
+        reason: "Reden",
+    },
+    rw: {
+        approvalSubject: "Uburenganzira bwawe muri gahunda yo kuzana abakiriya ya Creativa Poeta",
+        approvedTitle: "Ubusabe bwawe bwemejwe",
+        hello: "Muraho",
+        welcome: "Murakaza neza muri gahunda ya Creativa Poeta yo kuzana abakiriya. Ibyombi bikurikira bifite imirimo itandukanye.",
+        privateLabel: "Uburenganzira bwawe bwite",
+        privateTitle: "Menyesha Creativa Poeta umukiriya",
+        privateText: "Iyi linki yihariye kandi irinzwe ni iyawe gusa. Yifungure igihe wabonye umuntu cyangwa ikigo gikeneye serivisi z’ikoranabuhanga, maze utwoherereze amakuru yabo ukoresheje ifishi irinzwe. Ntukayihe undi muntu.",
+        privateButton: "Fungura ifishi yanjye irinzwe",
+        shareLabel: "Linki yo gukoporora no gusangiza abandi",
+        shareTitle: "Saba umukiriya ushobora gukorana natwe kuzuza ubusabe",
+        shareText: "Iyi linki rusange si ifishi yawe. Yikoporore maze uyihe umuntu cyangwa ikigo gishaka serivisi za Creativa Poeta. Ubusabe bwabo buzahuzwa n’indangamuntu yawe y’umufatanyabikorwa.",
+        shareHelp: "Hitamo linki iri hejuru, uyikoporore, hanyuma uyisangize kuri WhatsApp, email, SMS cyangwa imbuga nkoranyambaga.",
+        partnerId: "Indangamuntu y’umufatanyabikorwa",
+        rejectionSubject: "Amakuru mashya ku busabe bwawe bwo gufatanya na Creativa Poeta",
+        rejectedTitle: "Amakuru mashya ku busabe bwawe",
+        rejectedText: "Twasuzumye ubusabe bwawe bwo kwinjira muri gahunda ya Creativa Poeta yo kuzana abakiriya. Ntabwo bwemejwe muri iki gihe.",
+        reason: "Impamvu",
+    },
+};
+const getPartnerNotificationCopy = (locale) => {
+    const normalized = String(locale || "en").toLowerCase().split(/[-_]/)[0];
+    return partnerNotificationCopy[normalized] || partnerNotificationCopy.en;
+};
+exports.getPartnerNotificationCopy = getPartnerNotificationCopy;
+const renderPartnerApprovalEmail = ({ partnerName, partnerId, accessUrl, shareUrl, locale = "en", }) => {
+    const copy = (0, exports.getPartnerNotificationCopy)(locale);
+    return `
+  <h2 style="margin:0 0 18px;color:#101828;font-size:26px;line-height:1.25;">${copy.approvedTitle}</h2>
+  <p style="margin:0 0 14px;">${copy.hello} ${escapeHtml(partnerName)},</p>
+  <p style="margin:0 0 22px;">${copy.welcome}</p>
 
   <div style="margin:0 0 18px;padding:20px;border:1px solid #d0d5dd;border-radius:14px;background:#f8fafc;">
-    <div style="margin:0 0 6px;color:#b4852b;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">Your private access</div>
-    <h3 style="margin:0 0 8px;color:#101828;font-size:19px;">Present a client to Creativa Poeta</h3>
-    <p style="margin:0 0 16px;color:#475467;">This personal, secure link is for you only. Open it when you have found a person or company that needs digital services, then use the protected form to send us their details. Do not share this link.</p>
-    <a href="${escapeHtml(accessUrl)}" style="display:inline-block;padding:12px 18px;border-radius:9px;background:#071a33;color:#ffffff;text-decoration:none;font-weight:800;">Open my secure form&nbsp;&nbsp;&rarr;</a>
+    <div style="margin:0 0 6px;color:#b4852b;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">${copy.privateLabel}</div>
+    <h3 style="margin:0 0 8px;color:#101828;font-size:19px;">${copy.privateTitle}</h3>
+    <p style="margin:0 0 16px;color:#475467;">${copy.privateText}</p>
+    <a href="${escapeHtml(accessUrl)}" style="display:inline-block;padding:12px 18px;border-radius:9px;background:#071a33;color:#ffffff;text-decoration:none;font-weight:800;">${copy.privateButton}&nbsp;&nbsp;&rarr;</a>
   </div>
 
   <div style="margin:0 0 18px;padding:20px;border:1px solid #e3b323;border-radius:14px;background:#fffaf0;">
-    <div style="margin:0 0 6px;color:#8a6413;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">Link to copy and share</div>
-    <h3 style="margin:0 0 8px;color:#101828;font-size:19px;">Invite a potential client to complete the request</h3>
-    <p style="margin:0 0 14px;color:#475467;">This public link is not a form for you. Copy it and send it to a person or company interested in Creativa Poeta services. They will complete their own request, which will automatically be associated with your Partner ID.</p>
+    <div style="margin:0 0 6px;color:#8a6413;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">${copy.shareLabel}</div>
+    <h3 style="margin:0 0 8px;color:#101828;font-size:19px;">${copy.shareTitle}</h3>
+    <p style="margin:0 0 14px;color:#475467;">${copy.shareText}</p>
     <div style="padding:13px 14px;border:1px dashed #b4852b;border-radius:9px;background:#ffffff;color:#182640;font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.55;overflow-wrap:anywhere;user-select:all;">${renderNonClickableUrl(shareUrl)}</div>
-    <div style="margin:10px 0 0;color:#8a6413;font-size:13px;font-weight:800;">&#10697;&nbsp; Select the link above, copy it, then share it by WhatsApp, email, SMS or social media.</div>
+    <div style="margin:10px 0 0;color:#8a6413;font-size:13px;font-weight:800;">&#10697;&nbsp; ${copy.shareHelp}</div>
   </div>
 
-  <p style="margin:0;color:#475467;"><strong>Partner ID:</strong> ${escapeHtml(partnerId)}</p>
+  <p style="margin:0;color:#475467;"><strong>${copy.partnerId}:</strong> ${escapeHtml(partnerId)}</p>
 `;
+};
 exports.renderPartnerApprovalEmail = renderPartnerApprovalEmail;
+const renderPartnerRejectionEmail = ({ partnerName, reason, locale = "en", }) => {
+    const copy = (0, exports.getPartnerNotificationCopy)(locale);
+    return `<h2 style="margin:0 0 18px;color:#101828;font-size:26px;line-height:1.25;">${copy.rejectedTitle}</h2><p>${copy.hello} ${escapeHtml(partnerName)},</p><p>${copy.rejectedText}</p><p><strong>${copy.reason}:</strong> ${escapeHtml(reason)}</p>`;
+};
+exports.renderPartnerRejectionEmail = renderPartnerRejectionEmail;
 const applyToReferralProgram = async (req, res, next) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
     try {
@@ -696,8 +788,46 @@ const createManualReferralEntry = async (req, res) => {
         const shareUrl = ["approved", "active"].includes(partner.status)
             ? `${FRONTEND_URL}/referral-partners?ref=${encodeURIComponent(partner.referralCode || "")}#referred-business`
             : undefined;
+        let notification;
+        if (approveNow && plainSecret && accessUrl && shareUrl) {
+            const copy = (0, exports.getPartnerNotificationCopy)(partner.locale);
+            notification = await (0, referralPartnerNotificationService_1.deliverReferralPartnerNotification)({
+                target: {
+                    name: partner.name,
+                    email: partner.email,
+                    phone: partner.phone,
+                    preferredContact: partner.preferredContact,
+                    locale: partner.locale,
+                    partnerId: partner.partnerId,
+                },
+                content: {
+                    kind: "approval",
+                    emailSubject: copy.approvalSubject,
+                    emailHtml: (0, exports.renderPartnerApprovalEmail)({
+                        partnerName: partner.name,
+                        partnerId: partner.partnerId || "",
+                        accessUrl,
+                        shareUrl,
+                        locale: partner.locale,
+                    }),
+                    accessUrl,
+                    shareUrl,
+                },
+            });
+            partner.lastNotification = notification;
+            partner.activity.push({
+                type: "note",
+                message: notification.deliveredChannel
+                    ? `approval notification sent via ${notification.deliveredChannel}${notification.fallbackUsed ? " after preferred-channel failure" : ""}`
+                    : `approval notification ${notification.status}: ${notification.error || "delivery unavailable"}`,
+                actorEmail: getAdminEmail(req),
+                actorName: getAdminName(req),
+                at: new Date(),
+            });
+            await partner.save();
+        }
         const safePartner = await ReferralPartner_1.default.findById(partner._id);
-        res.status(201).json({ partner: safePartner, lead, accessUrl, shareUrl });
+        res.status(201).json({ partner: safePartner, lead, notification, accessUrl, shareUrl });
     }
     catch (error) {
         console.error("Manual referral entry failed:", error);
@@ -785,38 +915,81 @@ const updateReferralPartner = async (req, res) => {
         if (plainSecret)
             partner.activity.push({ type: "access", message: "Secure partner access regenerated", actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() });
         await partner.save();
-        let emailSent = false;
+        let notification;
         let accessUrl = "";
         let shareUrl = "";
         if (plainSecret) {
             accessUrl = (0, referralProgramPolicy_1.buildPrivatePartnerAccessUrl)(FRONTEND_URL, partner.partnerId || "", plainSecret);
             shareUrl = `${FRONTEND_URL}/referral-partners?ref=${encodeURIComponent(partner.referralCode || "")}#referred-business`;
-            if (partner.email) {
-                try {
-                    await (0, sendEmail_1.default)(partner.email, "Your Creativa Poeta client-introduction program access", (0, exports.renderPartnerApprovalEmail)({
+            const copy = (0, exports.getPartnerNotificationCopy)(partner.locale);
+            notification = await (0, referralPartnerNotificationService_1.deliverReferralPartnerNotification)({
+                target: {
+                    name: partner.name,
+                    email: partner.email,
+                    phone: partner.phone,
+                    preferredContact: partner.preferredContact,
+                    locale: partner.locale,
+                    partnerId: partner.partnerId,
+                },
+                content: {
+                    kind: "approval",
+                    emailSubject: copy.approvalSubject,
+                    emailHtml: (0, exports.renderPartnerApprovalEmail)({
                         partnerName: partner.name,
                         partnerId: partner.partnerId || "",
                         accessUrl,
                         shareUrl,
-                    }));
-                    emailSent = true;
-                }
-                catch (error) {
-                    console.error("Partner approval email failed:", error);
-                }
-            }
+                        locale: partner.locale,
+                    }),
+                    accessUrl,
+                    shareUrl,
+                },
+            });
         }
-        else if (status === "rejected" && partner.email) {
-            try {
-                await (0, sendEmail_1.default)(partner.email, "Update on your Creativa Poeta partner application", `<p>Hello ${escapeHtml(partner.name)},</p><p>We reviewed your application. It has not been accepted at this time.</p><p>${escapeHtml(reason)}</p>`);
-                emailSent = true;
-            }
-            catch (error) {
-                console.error("Partner rejection email failed:", error);
-            }
+        else if (status === "rejected") {
+            const copy = (0, exports.getPartnerNotificationCopy)(partner.locale);
+            notification = await (0, referralPartnerNotificationService_1.deliverReferralPartnerNotification)({
+                target: {
+                    name: partner.name,
+                    email: partner.email,
+                    phone: partner.phone,
+                    preferredContact: partner.preferredContact,
+                    locale: partner.locale,
+                    partnerId: partner.partnerId,
+                },
+                content: {
+                    kind: "rejection",
+                    emailSubject: copy.rejectionSubject,
+                    emailHtml: (0, exports.renderPartnerRejectionEmail)({
+                        partnerName: partner.name,
+                        reason,
+                        locale: partner.locale,
+                    }),
+                    reason,
+                },
+            });
+        }
+        if (notification) {
+            partner.lastNotification = notification;
+            partner.activity.push({
+                type: "note",
+                message: notification.deliveredChannel
+                    ? `${notification.kind} notification sent via ${notification.deliveredChannel}${notification.fallbackUsed ? " after preferred-channel failure" : ""}`
+                    : `${notification.kind} notification ${notification.status}: ${notification.error || "delivery unavailable"}`,
+                actorEmail: getAdminEmail(req),
+                actorName: getAdminName(req),
+                at: new Date(),
+            });
+            await partner.save();
         }
         const safePartner = await ReferralPartner_1.default.findById(partner._id);
-        res.json({ partner: safePartner, emailSent, accessUrl: accessUrl || undefined, shareUrl: shareUrl || undefined });
+        res.json({
+            partner: safePartner,
+            emailSent: (notification === null || notification === void 0 ? void 0 : notification.deliveredChannel) === "email",
+            notification,
+            accessUrl: accessUrl || undefined,
+            shareUrl: shareUrl || undefined,
+        });
     }
     catch {
         res.status(500).json({ message: "Failed to update referral partner." });
