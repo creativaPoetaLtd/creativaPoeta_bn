@@ -77,9 +77,14 @@ const createReferralCode = async () => {
 };
 
 const sendAdminNotice = async (subject: string, html: string) => {
-  if (!process.env.EMAIL_USER) return false;
+  const adminEmail =
+    cleanEmail(process.env.ADMIN_NOTIFICATION_EMAIL) ||
+    cleanEmail(process.env.EMAIL_USER);
+
+  if (!adminEmail) return false;
+
   try {
-    await sendEmail(process.env.EMAIL_USER, subject, html);
+    await sendEmail(adminEmail, subject, html);
     return true;
   } catch (error) {
     console.error("Referral program admin email failed:", error);
