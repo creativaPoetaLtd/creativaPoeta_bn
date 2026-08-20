@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateJobApplication = exports.getJobApplications = exports.downloadJobApplicationCv = exports.sendJobApplication = void 0;
 const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
+const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
 const dotenv_1 = __importDefault(require("dotenv"));
 const Job_1 = __importDefault(require("../models/Job"));
 const JobApplication_1 = __importDefault(require("../models/JobApplication"));
@@ -93,7 +94,7 @@ const sendJobApplication = async (req, res, next) => {
                 throw fileError;
             }
         }
-        const emailUser = process.env.EMAIL_USER;
+        const emailUser = (0, adminNotificationEmail_1.getAdminNotificationEmail)();
         if (emailUser) {
             const htmlContent = `
                 <h2>New ${job ? "job" : "spontaneous"} application</h2>

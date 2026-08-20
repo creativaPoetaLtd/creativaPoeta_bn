@@ -3,6 +3,7 @@ import PartnershipRequest, {
   PartnershipRequestStatus,
 } from "../models/PartnershipRequest";
 import sendEmail from "../utils/sendEmail";
+import { sendAdminNotificationEmail } from "../utils/adminNotificationEmail";
 
 const validStatuses: PartnershipRequestStatus[] = [
   "pending",
@@ -77,14 +78,9 @@ export const createPartnershipRequest = async (
       message,
     });
 
-    let emailSent = false;
-    const recipientEmail = process.env.EMAIL_USER;
-    if (recipientEmail) {
-      try {
-        await sendEmail(
-          recipientEmail,
-          `New partnership request - ${company || name}`,
-          `<h2>New partnership request</h2>
+    const emailSent = await sendAdminNotificationEmail(
+      `New partnership request - ${company || name}`,
+      `<h2>New partnership request</h2>
            <p><strong>Name:</strong> ${escapeHtml(name)}</p>
            <p><strong>Company:</strong> ${escapeHtml(company || "-")}</p>
            <p><strong>Email:</strong> ${escapeHtml(email)}</p>
@@ -92,12 +88,7 @@ export const createPartnershipRequest = async (
            <p><strong>Type:</strong> ${escapeHtml(partnershipType)}</p>
            <p><strong>Language:</strong> ${escapeHtml(locale)}</p>
            <p><strong>Message:</strong><br>${escapeHtml(message).replace(/\n/g, "<br>")}</p>`
-        );
-        emailSent = true;
-      } catch (emailError) {
-        console.error("Partnership notification email failed:", emailError);
-      }
-    }
+    );
 
     res.status(201).json({
       message: "Partnership request submitted successfully.",

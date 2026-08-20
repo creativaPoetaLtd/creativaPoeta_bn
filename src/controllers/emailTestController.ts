@@ -1,24 +1,18 @@
 import { Request, Response } from "express";
 import sendEmail from "../utils/sendEmail";
+import { getAdminNotificationEmail } from "../utils/adminNotificationEmail";
 
 export const testEmail = async (req: Request, res: Response): Promise<void> => {
   try {
     console.log("🧪 Testing email configuration...");
     
-    // Check environment variables
-    const emailUser = process.env.EMAIL_USER;
-    const emailPass = process.env.EMAIL_PASS;
+    const recipientEmail = getAdminNotificationEmail();
     
-    console.log("Environment check:");
-    console.log(`EMAIL_USER: ${emailUser ? 'SET' : 'NOT SET'}`);
-    console.log(`EMAIL_PASS: ${emailPass ? 'SET' : 'NOT SET'}`);
-    
-    if (!emailUser || !emailPass) {
+    if (!recipientEmail) {
       res.status(500).json({
-        error: "Email credentials not configured",
+        error: "Administrative notification recipient is not configured",
         details: {
-          EMAIL_USER: !!emailUser,
-          EMAIL_PASS: !!emailPass,
+          ADMIN_NOTIFICATION_EMAIL: !!recipientEmail,
         }
       });
       return;
@@ -30,15 +24,10 @@ export const testEmail = async (req: Request, res: Response): Promise<void> => {
       <p>This is a test email from your Creativa Poeta backend.</p>
       <p><strong>Server:</strong> ${process.env.NODE_ENV || 'development'}</p>
       <p><strong>Time:</strong> ${new Date().toISOString()}</p>
-      <div style="background: #f0f0f0; padding: 10px; margin: 10px 0;">
-        <strong>Environment Variables:</strong><br>
-        EMAIL_USER: ${emailUser}<br>
-        EMAIL_PASS: ${'*'.repeat(emailPass.length)}<br>
-      </div>
     `;
 
     await sendEmail(
-      emailUser, // Send to self
+      recipientEmail,
       "🧪 Email Test - Creativa Poeta Backend",
       testHtmlContent
     );
@@ -46,7 +35,7 @@ export const testEmail = async (req: Request, res: Response): Promise<void> => {
     res.status(200).json({
       success: true,
       message: "Test email sent successfully!",
-      sentTo: emailUser,
+      sentTo: recipientEmail,
       timestamp: new Date().toISOString()
     });
 

@@ -10,6 +10,8 @@ const Blog_1 = __importDefault(require("../models/Blog"));
 const cloudinary_1 = require("../utils/cloudinary");
 const frontendBuildService_1 = require("../services/frontendBuildService");
 const blogRelatedService_1 = require("../services/blogRelatedService");
+const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
+const emailTemplate_1 = require("../utils/emailTemplate");
 const blogGenerationService_1 = require("../services/blogGenerationService");
 const LANGUAGES = new Set(["fr", "en", "nl", "kiny"]);
 const STATUSES = new Set(["draft", "published", "archived"]);
@@ -484,16 +486,29 @@ const addComment = async (req, res, next) => {
             res.status(404).json({ message: "Blog not found" });
             return;
         }
+        const commentName = String(name).trim().slice(0, 100);
+        const commentEmail = String(email).trim().toLowerCase();
+        const commentText = String(text).trim().slice(0, 1000);
         blog.comments.push({
-            name: String(name).trim().slice(0, 100),
-            email: String(email).trim().toLowerCase(),
-            text: String(text).trim().slice(0, 1000),
+            name: commentName,
+            email: commentEmail,
+            text: commentText,
             createdAt: new Date(),
         });
         await blog.save();
+        const emailSent = await (0, adminNotificationEmail_1.sendAdminNotificationEmail)(`New blog comment - ${blog.title}`, `
+        <h2>New blog comment</h2>
+        <p><strong>Article:</strong> ${(0, emailTemplate_1.escapeHtml)(blog.title)}</p>
+        <p><strong>Name:</strong> ${(0, emailTemplate_1.escapeHtml)(commentName)}</p>
+        <p><strong>Email:</strong> ${(0, emailTemplate_1.escapeHtml)(commentEmail)}</p>
+        <p><strong>Comment:</strong></p>
+        <p>${(0, emailTemplate_1.escapeHtml)(commentText).replace(/\n/g, "<br>")}</p>
+        <p>Open the Blogs tab in the Creativa Poeta dashboard to review it.</p>
+      `);
         res.status(201).json({
             message: "Comment added successfully",
             totalComments: blog.comments.length,
+            emailSent,
         });
     }
     catch (error) {

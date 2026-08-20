@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteProjectRequest = exports.releaseProjectRequest = exports.claimProjectRequest = exports.updateProjectRequestStatus = exports.replyToProjectRequest = exports.getProjectRequest = exports.getAllProjectRequests = exports.getProjectRequestSummary = exports.sendProjectInquiry = exports.renderProjectReplyContent = void 0;
 const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
+const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
 const emailTemplate_1 = require("../utils/emailTemplate");
 const ProjectDescription_1 = __importDefault(require("../models/ProjectDescription"));
 const dotenv_1 = __importDefault(require("dotenv"));
@@ -316,19 +317,7 @@ const sendProjectInquiry = async (req, res, next) => {
 </html>
         `;
         // Send the email (optional - don't fail if email fails)
-        const emailUser = process.env.EMAIL_USER;
-        let emailSent = false;
-        if (emailUser) {
-            try {
-                await (0, sendEmail_1.default)(emailUser, "New Project Inquiry", htmlContent);
-                emailSent = true;
-                console.log("Email notification sent successfully");
-            }
-            catch (emailError) {
-                console.error("Failed to send email notification:", emailError);
-                // Don't fail the request if email fails
-            }
-        }
+        const emailSent = await (0, adminNotificationEmail_1.sendAdminNotificationEmail)("New Project Inquiry", htmlContent);
         res.status(201).json({
             message: `Inquiry saved successfully!${emailSent ? " Email notification sent." : " (Email notification failed)"}`,
             requestId: savedRequest._id,

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import sendEmail from "../utils/sendEmail";
+import { getAdminNotificationEmail } from "../utils/adminNotificationEmail";
 import dotenv from "dotenv";
 import Job from "../models/Job";
 import JobApplication, { JobApplicationStatus } from "../models/JobApplication";
@@ -95,7 +96,7 @@ export const sendJobApplication = async (req: Request, res: Response, next: Next
             }
         }
 
-        const emailUser = process.env.EMAIL_USER;
+        const emailUser = getAdminNotificationEmail();
         if (emailUser) {
             const htmlContent = `
                 <h2>New ${job ? "job" : "spontaneous"} application</h2>

@@ -10,6 +10,7 @@ const User_1 = __importDefault(require("../models/User"));
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const emailSyncService_1 = require("../services/emailSyncService");
 const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
+const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
 const emailTemplate_1 = require("../utils/emailTemplate");
 const emailFilters_1 = require("../utils/emailFilters");
 const allowedStatuses = ["new", "read", "replied", "archived"];
@@ -189,10 +190,6 @@ const assignEmailToCurrentUser = (email, req, message = "Ticket pris en charge")
     addEmailActivity(email, req, "assigned", message);
 };
 const canModifyEmailAssignment = (req, email) => canManageSharedMailboxes(req) || !email.assignedToEmail || email.assignedToEmail === getAdminEmail(req);
-const getAdminNotificationEmail = () => process.env.ADMIN_NOTIFICATION_EMAIL ||
-    process.env.ADMIN_EMAIL ||
-    process.env.EMAIL_USER ||
-    "creativapoeta@gmail.com";
 const isValidCronToken = (req) => {
     const expected = process.env.EMAIL_SYNC_CRON_TOKEN;
     if (!expected)
@@ -246,7 +243,7 @@ const notifyAdminAboutNewEmails = async (syncStartedAt, importedCount) => {
       </a>
     </p>
   `;
-    await (0, sendEmail_1.default)(getAdminNotificationEmail(), "Nouveau mail recu dans CP Mail", content, {
+    await (0, adminNotificationEmail_1.sendAdminNotificationEmail)("Nouveau mail recu dans CP Mail", content, {
         title: "Nouveau mail recu dans CP Mail",
         preheader: `${newEmails.length} nouveau(x) message(s) dans Creativa Poeta Mail.`,
         replyTo: process.env.REPLY_TO_EMAIL || process.env.SMTP_FROM_EMAIL || "contact@creativapoeta.com",

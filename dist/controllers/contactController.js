@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteQuery = exports.releaseQuery = exports.claimQuery = exports.updateQueryStatus = exports.replyToQuery = exports.getQuery = exports.getAllQueries = exports.getContactSummary = exports.sendContactDetails = void 0;
 const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
+const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
 const Query_1 = __importDefault(require("../models/Query"));
 const getAdminEmail = (req) => { var _a; return String(((_a = req.user) === null || _a === void 0 ? void 0 : _a.email) || "").toLowerCase().trim(); };
 const getAdminName = (req) => { var _a, _b; return String(((_a = req.user) === null || _a === void 0 ? void 0 : _a.name) || ((_b = req.user) === null || _b === void 0 ? void 0 : _b.email) || "Admin").trim(); };
@@ -53,11 +54,7 @@ const sendContactDetails = async (req, res, next) => {
                 <p><strong>Message:</strong> ${message}</p>
                 <p><strong>Submitted At:</strong> ${savedQuery.createdAt}</p>
             `;
-            const recipientEmail = process.env.EMAIL_USER;
-            if (recipientEmail) {
-                await (0, sendEmail_1.default)(recipientEmail, "New Contact Form Submission", htmlContent);
-                emailSent = true;
-            }
+            emailSent = await (0, adminNotificationEmail_1.sendAdminNotificationEmail)("New Contact Form Submission", htmlContent);
         }
         catch (emailError) {
             console.error("Email sending failed:", emailError);

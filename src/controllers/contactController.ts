@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import sendEmail from "../utils/sendEmail";
+import { sendAdminNotificationEmail } from "../utils/adminNotificationEmail";
 import Query, { IQuery } from "../models/Query";
 
 const getAdminEmail = (req: Request) => String((req.user as any)?.email || "").toLowerCase().trim();
@@ -63,15 +64,10 @@ export const sendContactDetails = async (
                 <p><strong>Submitted At:</strong> ${savedQuery.createdAt}</p>
             `;
 
-      const recipientEmail = process.env.EMAIL_USER;
-      if (recipientEmail) {
-        await sendEmail(
-          recipientEmail,
-          "New Contact Form Submission",
-          htmlContent
-        );
-        emailSent = true;
-      }
+      emailSent = await sendAdminNotificationEmail(
+        "New Contact Form Submission",
+        htmlContent
+      );
     } catch (emailError) {
       console.error("Email sending failed:", emailError);
       // Don't fail the request if email fails

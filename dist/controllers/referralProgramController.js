@@ -11,7 +11,7 @@ const ReferralReward_1 = __importDefault(require("../models/ReferralReward"));
 const referralProgramPolicy_1 = require("../domain/referralProgramPolicy");
 const referralRateLimitService_1 = require("../services/referralRateLimitService");
 const referralPartnerNotificationService_1 = require("../services/referralPartnerNotificationService");
-const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
+const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
 const TERMS_VERSION = "2026-08-11";
 const FRONTEND_URL = (process.env.FRONTEND_URL || "https://creativapoeta.com").replace(/\/$/, "");
 const partnerStatuses = ["pending", "approved", "active", "rejected", "suspended", "closed"];
@@ -76,18 +76,6 @@ const createReferralCode = async () => {
             return candidate;
     }
     return crypto_1.default.randomUUID().replace(/-/g, "");
-};
-const sendAdminNotice = async (subject, html) => {
-    if (!process.env.EMAIL_USER)
-        return false;
-    try {
-        await (0, sendEmail_1.default)(process.env.EMAIL_USER, subject, html);
-        return true;
-    }
-    catch (error) {
-        console.error("Referral program admin email failed:", error);
-        return false;
-    }
 };
 const renderNonClickableUrl = (url) => {
     const escapedUrl = escapeHtml(url);
@@ -270,7 +258,7 @@ const applyToReferralProgram = async (req, res, next) => {
             marketingConsent: ((_o = req.body) === null || _o === void 0 ? void 0 : _o.marketingConsent) === true,
             activity: [{ type: "application", message: `${program} partner application submitted`, at: new Date() }],
         });
-        const emailSent = await sendAdminNotice(`New ${program} partner application - ${name}`, `<h2>New client-introduction program application</h2><p><strong>Name:</strong> ${escapeHtml(name)}</p><p><strong>Email:</strong> ${escapeHtml(email || "Not provided")}</p><p><strong>Phone / WhatsApp:</strong> ${escapeHtml(phone || "Not provided")}</p><p><strong>Preferred contact:</strong> ${escapeHtml(preferredContact)}</p><p><strong>Country:</strong> ${escapeHtml(country)}</p><p><strong>Program:</strong> ${escapeHtml(program)}</p>`);
+        const emailSent = await (0, adminNotificationEmail_1.sendAdminNotificationEmail)(`New ${program} partner application - ${name}`, `<h2>New client-introduction program application</h2><p><strong>Name:</strong> ${escapeHtml(name)}</p><p><strong>Email:</strong> ${escapeHtml(email || "Not provided")}</p><p><strong>Phone / WhatsApp:</strong> ${escapeHtml(phone || "Not provided")}</p><p><strong>Preferred contact:</strong> ${escapeHtml(preferredContact)}</p><p><strong>Country:</strong> ${escapeHtml(country)}</p><p><strong>Program:</strong> ${escapeHtml(program)}</p>`);
         res.status(201).json({ applicationId: partner._id, outcome: "submitted", status: partner.status, emailSent });
     }
     catch (error) {
@@ -310,7 +298,7 @@ const requestPartnerAccessRecovery = async (req, res, next) => {
                 at: new Date(),
             });
             await partner.save();
-            await sendAdminNotice(`Private referral access requested - ${partner.name}`, `<h2>Private referral access requested</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId || "Pending approval")} - ${escapeHtml(partner.name)}</p><p><strong>Email:</strong> ${escapeHtml(partner.email || "Not provided")}</p><p><strong>Phone / WhatsApp:</strong> ${escapeHtml(partner.phone || "Not provided")}</p><p>Open Referral &amp; Partners in the dashboard, review this partner and generate a new private link when appropriate.</p>`);
+            await (0, adminNotificationEmail_1.sendAdminNotificationEmail)(`Private referral access requested - ${partner.name}`, `<h2>Private referral access requested</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId || "Pending approval")} - ${escapeHtml(partner.name)}</p><p><strong>Email:</strong> ${escapeHtml(partner.email || "Not provided")}</p><p><strong>Phone / WhatsApp:</strong> ${escapeHtml(partner.phone || "Not provided")}</p><p>Open Referral &amp; Partners in the dashboard, review this partner and generate a new private link when appropriate.</p>`);
         }
         // Keep the public response neutral if a mistyped contact does not match.
         res.status(202).json({ outcome: "received" });
@@ -408,7 +396,7 @@ const submitReferralLead = async (req, res, next) => {
         const clientLabel = companyName || contactName;
         partner.activity.push({ type: "note", message: `Referral submitted for ${clientLabel}`, at: new Date() });
         await partner.save();
-        const emailSent = await sendAdminNotice(`New referral - ${clientLabel}`, `<h2>New client introduction</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Client type:</strong> ${escapeHtml(clientType)}</p><p><strong>Client:</strong> ${escapeHtml(clientLabel)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)}</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p><p><strong>Consent:</strong> ${escapeHtml(consentStatus)}</p>`);
+        const emailSent = await (0, adminNotificationEmail_1.sendAdminNotificationEmail)(`New referral - ${clientLabel}`, `<h2>New client introduction</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Client type:</strong> ${escapeHtml(clientType)}</p><p><strong>Client:</strong> ${escapeHtml(clientLabel)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)}</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p><p><strong>Consent:</strong> ${escapeHtml(consentStatus)}</p>`);
         res.status(201).json({ leadId: lead._id, status: lead.status, emailSent });
     }
     catch (error) {
@@ -549,7 +537,7 @@ const submitDirectReferral = async (req, res, next) => {
         const clientLabel = companyName || contactName;
         partner.activity.push({ type: "note", message: `Client introduction submitted for ${clientLabel}`, at: new Date() });
         await partner.save();
-        const emailSent = await sendAdminNotice(`New direct client introduction - ${clientLabel}`, `<h2>New client introduction and program registration</h2><p><strong>Introducer:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Introducer contact:</strong> ${escapeHtml(partner.email || partner.phone || "Not provided")}</p><p><strong>Client type:</strong> ${escapeHtml(clientType)}</p><p><strong>Client:</strong> ${escapeHtml(clientLabel)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)}</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p><p><strong>Consent:</strong> ${escapeHtml(consentStatus)}</p>`);
+        const emailSent = await (0, adminNotificationEmail_1.sendAdminNotificationEmail)(`New direct client introduction - ${clientLabel}`, `<h2>New client introduction and program registration</h2><p><strong>Introducer:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Introducer contact:</strong> ${escapeHtml(partner.email || partner.phone || "Not provided")}</p><p><strong>Client type:</strong> ${escapeHtml(clientType)}</p><p><strong>Client:</strong> ${escapeHtml(clientLabel)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)}</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p><p><strong>Consent:</strong> ${escapeHtml(consentStatus)}</p>`);
         res.status(201).json({
             leadId: lead._id,
             status: lead.status,
@@ -637,7 +625,7 @@ const submitProspectReferral = async (req, res, next) => {
         const clientLabel = companyName || contactName;
         partner.activity.push({ type: "note", message: `Prospect referral received for ${clientLabel}`, at: new Date() });
         await partner.save();
-        const emailSent = await sendAdminNotice(`New prospect-confirmed referral - ${clientLabel}`, `<h2>New prospect-confirmed client introduction</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Client type:</strong> ${escapeHtml(clientType)}</p><p><strong>Client:</strong> ${escapeHtml(clientLabel)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)} (${escapeHtml(contactEmail || contactPhone)})</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p>`);
+        const emailSent = await (0, adminNotificationEmail_1.sendAdminNotificationEmail)(`New prospect-confirmed referral - ${clientLabel}`, `<h2>New prospect-confirmed client introduction</h2><p><strong>Partner:</strong> ${escapeHtml(partner.partnerId)} - ${escapeHtml(partner.name)}</p><p><strong>Client type:</strong> ${escapeHtml(clientType)}</p><p><strong>Client:</strong> ${escapeHtml(clientLabel)}</p><p><strong>Contact:</strong> ${escapeHtml(contactName)} (${escapeHtml(contactEmail || contactPhone)})</p><p><strong>Service:</strong> ${escapeHtml(serviceNeeded)}</p>`);
         res.status(201).json({ leadId: lead._id, status: lead.status, emailSent });
     }
     catch (error) {

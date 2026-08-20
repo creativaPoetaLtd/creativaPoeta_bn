@@ -4,14 +4,14 @@ import { renderBrandedEmail } from "./emailTemplate";
 
 dotenv.config();
 
-interface SendEmailAttachment {
+export interface SendEmailAttachment {
   filename: string;
   path?: string;
   content?: Buffer;
   contentType?: string;
 }
 
-interface SendEmailOptions {
+export interface SendEmailOptions {
   attachments?: SendEmailAttachment[];
   cc?: string[];
   bcc?: string[];

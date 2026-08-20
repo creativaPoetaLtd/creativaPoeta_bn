@@ -5,6 +5,8 @@ import Blog, { BlogLanguage, BlogStatus, IBlog } from "../models/Blog";
 import { uploadToCloudinary } from "../utils/cloudinary";
 import { triggerFrontendBuild } from "../services/frontendBuildService";
 import { findRelatedBlogs } from "../services/blogRelatedService";
+import { sendAdminNotificationEmail } from "../utils/adminNotificationEmail";
+import { escapeHtml } from "../utils/emailTemplate";
 import {
   BlogGenerationInput,
   evaluateDraftQuality,
@@ -587,17 +589,35 @@ export const addComment = async (
       return;
     }
 
+    const commentName = String(name).trim().slice(0, 100);
+    const commentEmail = String(email).trim().toLowerCase();
+    const commentText = String(text).trim().slice(0, 1000);
+
     blog.comments.push({
-      name: String(name).trim().slice(0, 100),
-      email: String(email).trim().toLowerCase(),
-      text: String(text).trim().slice(0, 1000),
+      name: commentName,
+      email: commentEmail,
+      text: commentText,
       createdAt: new Date(),
     });
     await blog.save();
 
+    const emailSent = await sendAdminNotificationEmail(
+      `New blog comment - ${blog.title}`,
+      `
+        <h2>New blog comment</h2>
+        <p><strong>Article:</strong> ${escapeHtml(blog.title)}</p>
+        <p><strong>Name:</strong> ${escapeHtml(commentName)}</p>
+        <p><strong>Email:</strong> ${escapeHtml(commentEmail)}</p>
+        <p><strong>Comment:</strong></p>
+        <p>${escapeHtml(commentText).replace(/\n/g, "<br>")}</p>
+        <p>Open the Blogs tab in the Creativa Poeta dashboard to review it.</p>
+      `
+    );
+
     res.status(201).json({
       message: "Comment added successfully",
       totalComments: blog.comments.length,
+      emailSent,
     });
   } catch (error) {
     next(error);

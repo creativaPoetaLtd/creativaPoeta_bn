@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import sendEmail from "../utils/sendEmail";
+import { sendAdminNotificationEmail } from "../utils/adminNotificationEmail";
 import { formatParagraphs } from "../utils/emailTemplate";
 import ProjectRequest from "../models/ProjectDescription";
 import dotenv from "dotenv";
@@ -353,19 +354,10 @@ export const sendProjectInquiry = async (
         `;
 
     // Send the email (optional - don't fail if email fails)
-    const emailUser = process.env.EMAIL_USER;
-    let emailSent = false;
-
-    if (emailUser) {
-      try {
-        await sendEmail(emailUser, "New Project Inquiry", htmlContent);
-        emailSent = true;
-        console.log("Email notification sent successfully");
-      } catch (emailError) {
-        console.error("Failed to send email notification:", emailError);
-        // Don't fail the request if email fails
-      }
-    }
+    const emailSent = await sendAdminNotificationEmail(
+      "New Project Inquiry",
+      htmlContent
+    );
 
     res.status(201).json({
       message: `Inquiry saved successfully!${

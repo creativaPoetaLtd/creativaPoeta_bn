@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deletePartnershipRequest = exports.replyToPartnershipRequest = exports.updatePartnershipRequestStatus = exports.releasePartnershipRequest = exports.claimPartnershipRequest = exports.getPartnershipRequest = exports.getPartnershipRequests = exports.getPartnershipRequestSummary = exports.createPartnershipRequest = void 0;
 const PartnershipRequest_1 = __importDefault(require("../models/PartnershipRequest"));
 const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
+const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
 const validStatuses = [
     "pending",
     "in_progress",
@@ -60,11 +61,7 @@ const createPartnershipRequest = async (req, res, next) => {
             locale,
             message,
         });
-        let emailSent = false;
-        const recipientEmail = process.env.EMAIL_USER;
-        if (recipientEmail) {
-            try {
-                await (0, sendEmail_1.default)(recipientEmail, `New partnership request - ${company || name}`, `<h2>New partnership request</h2>
+        const emailSent = await (0, adminNotificationEmail_1.sendAdminNotificationEmail)(`New partnership request - ${company || name}`, `<h2>New partnership request</h2>
            <p><strong>Name:</strong> ${escapeHtml(name)}</p>
            <p><strong>Company:</strong> ${escapeHtml(company || "-")}</p>
            <p><strong>Email:</strong> ${escapeHtml(email)}</p>
@@ -72,12 +69,6 @@ const createPartnershipRequest = async (req, res, next) => {
            <p><strong>Type:</strong> ${escapeHtml(partnershipType)}</p>
            <p><strong>Language:</strong> ${escapeHtml(locale)}</p>
            <p><strong>Message:</strong><br>${escapeHtml(message).replace(/\n/g, "<br>")}</p>`);
-                emailSent = true;
-            }
-            catch (emailError) {
-                console.error("Partnership notification email failed:", emailError);
-            }
-        }
         res.status(201).json({
             message: "Partnership request submitted successfully.",
             requestId: request._id,

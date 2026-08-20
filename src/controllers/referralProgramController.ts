@@ -9,7 +9,7 @@ import {
   deliverReferralPartnerNotification,
   ReferralNotificationDelivery,
 } from "../services/referralPartnerNotificationService";
-import sendEmail from "../utils/sendEmail";
+import { sendAdminNotificationEmail as sendAdminNotice } from "../utils/adminNotificationEmail";
 
 const TERMS_VERSION = "2026-08-11";
 const FRONTEND_URL = (process.env.FRONTEND_URL || "https://creativapoeta.com").replace(/\/$/, "");
@@ -74,22 +74,6 @@ const createReferralCode = async () => {
     if (!(await ReferralPartner.exists({ referralCode: candidate }))) return candidate;
   }
   return crypto.randomUUID().replace(/-/g, "");
-};
-
-const sendAdminNotice = async (subject: string, html: string) => {
-  const adminEmail =
-    cleanEmail(process.env.ADMIN_NOTIFICATION_EMAIL) ||
-    cleanEmail(process.env.EMAIL_USER);
-
-  if (!adminEmail) return false;
-
-  try {
-    await sendEmail(adminEmail, subject, html);
-    return true;
-  } catch (error) {
-    console.error("Referral program admin email failed:", error);
-    return false;
-  }
 };
 
 const renderNonClickableUrl = (url: string) => {
