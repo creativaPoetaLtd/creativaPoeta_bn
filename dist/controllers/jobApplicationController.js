@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateJobApplication = exports.getJobApplications = exports.downloadJobApplicationCv = exports.sendJobApplication = void 0;
+exports.deleteJobApplication = exports.updateJobApplication = exports.getJobApplications = exports.downloadJobApplicationCv = exports.sendJobApplication = void 0;
 const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
 const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
 const communicationLocale_1 = require("../utils/communicationLocale");
@@ -183,3 +183,19 @@ const updateJobApplication = async (req, res, next) => {
     }
 };
 exports.updateJobApplication = updateJobApplication;
+const deleteJobApplication = async (req, res, next) => {
+    try {
+        const application = await JobApplication_1.default.findById(req.params.id).select("_id");
+        if (!application) {
+            res.status(404).json({ message: "Application not found." });
+            return;
+        }
+        await JobApplicationFile_1.default.deleteOne({ application: application._id });
+        await application.deleteOne();
+        res.status(200).json({ message: "Application deleted." });
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.deleteJobApplication = deleteJobApplication;

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.markReferralRewardPaid = exports.updateReferralRewardStatus = exports.upsertReferralReward = exports.getReferralRewards = exports.claimReferralLead = exports.updateReferralLead = exports.getReferralLeads = exports.prepareReferralPartnerManualPackage = exports.updateReferralPartner = exports.getReferralPartners = exports.getReferralProgramSummary = exports.createManualReferralEntry = exports.submitProspectReferral = exports.submitDirectReferral = exports.submitReferralLead = exports.requestPartnerAccessRecovery = exports.applyToReferralProgram = exports.renderPartnerRejectionEmail = exports.renderPartnerApprovalMessage = exports.renderPartnerApprovalEmail = exports.getPartnerNotificationCopy = void 0;
+exports.markReferralRewardPaid = exports.updateReferralRewardStatus = exports.upsertReferralReward = exports.getReferralRewards = exports.claimReferralLead = exports.deleteReferralLead = exports.updateReferralLead = exports.getReferralLeads = exports.prepareReferralPartnerManualPackage = exports.deleteReferralPartner = exports.updateReferralPartner = exports.getReferralPartners = exports.getReferralProgramSummary = exports.createManualReferralEntry = exports.submitProspectReferral = exports.submitDirectReferral = exports.submitReferralLead = exports.requestPartnerAccessRecovery = exports.applyToReferralProgram = exports.renderPartnerRejectionEmail = exports.renderPartnerApprovalMessage = exports.renderPartnerApprovalEmail = exports.getPartnerNotificationCopy = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 const ReferralLead_1 = __importDefault(require("../models/ReferralLead"));
 const ReferralPartner_1 = __importDefault(require("../models/ReferralPartner"));
@@ -1050,6 +1050,29 @@ const updateReferralPartner = async (req, res) => {
     }
 };
 exports.updateReferralPartner = updateReferralPartner;
+const deleteReferralPartner = async (req, res) => {
+    try {
+        const partner = await ReferralPartner_1.default.findById(req.params.id).select("_id name partnerId");
+        if (!partner) {
+            res.status(404).json({ message: "Referral partner application not found." });
+            return;
+        }
+        const [linkedLeads, linkedRewards] = await Promise.all([
+            ReferralLead_1.default.countDocuments({ partner: partner._id }),
+            ReferralReward_1.default.countDocuments({ partner: partner._id }),
+        ]);
+        if (linkedLeads > 0 || linkedRewards > 0) {
+            res.status(409).json({ message: "This application cannot be deleted because client introductions or reward records are linked to it. Set its status to closed instead." });
+            return;
+        }
+        await partner.deleteOne();
+        res.status(200).json({ message: "Referral partner application deleted." });
+    }
+    catch {
+        res.status(500).json({ message: "Failed to delete referral partner application." });
+    }
+};
+exports.deleteReferralPartner = deleteReferralPartner;
 const prepareReferralPartnerManualPackage = async (req, res) => {
     try {
         const partner = await ReferralPartner_1.default.findById(req.params.id).select("+accessSecretHash +referralCode");
@@ -1144,6 +1167,25 @@ const updateReferralLead = async (req, res) => {
     }
 };
 exports.updateReferralLead = updateReferralLead;
+const deleteReferralLead = async (req, res) => {
+    try {
+        const lead = await ReferralLead_1.default.findById(req.params.id).select("_id companyName contactName");
+        if (!lead) {
+            res.status(404).json({ message: "Referral lead not found." });
+            return;
+        }
+        if (await ReferralReward_1.default.exists({ lead: lead._id })) {
+            res.status(409).json({ message: "This client introduction cannot be deleted because a reward record is linked to it. Keep it for financial traceability." });
+            return;
+        }
+        await lead.deleteOne();
+        res.status(200).json({ message: "Client introduction deleted." });
+    }
+    catch {
+        res.status(500).json({ message: "Failed to delete client introduction." });
+    }
+};
+exports.deleteReferralLead = deleteReferralLead;
 const claimReferralLead = async (req, res) => {
     try {
         const lead = await ReferralLead_1.default.findById(req.params.id);

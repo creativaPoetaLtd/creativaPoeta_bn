@@ -33,4 +33,5 @@ jobRouter.post("/apply", receiveCareerCv, jobApplicationController_1.sendJobAppl
 jobRouter.get("/applications", authMiddleware_1.authenticateUser, authMiddleware_1.adminOnly, manageJobs, jobApplicationController_1.getJobApplications);
 jobRouter.get("/applications/:id/cv", authMiddleware_1.authenticateUser, authMiddleware_1.adminOnly, manageJobs, jobApplicationController_1.downloadJobApplicationCv);
 jobRouter.patch("/applications/:id", authMiddleware_1.authenticateUser, authMiddleware_1.adminOnly, manageJobs, jobApplicationController_1.updateJobApplication);
+jobRouter.delete("/applications/:id", authMiddleware_1.authenticateUser, authMiddleware_1.adminOnly, manageJobs, jobApplicationController_1.deleteJobApplication);
 exports.default = jobRouter;

@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response, Router } from "express";
 import multer from "multer";
-import { downloadJobApplicationCv, getJobApplications, sendJobApplication, updateJobApplication } from "../controllers/jobApplicationController";
+import { deleteJobApplication, downloadJobApplicationCv, getJobApplications, sendJobApplication, updateJobApplication } from "../controllers/jobApplicationController";
 import { authenticateUser, adminOnly } from "../middleware/authMiddleware";
 import { authorizeAdminPermission } from "../middleware/permissionMiddleware";
 const jobRouter = Router();
@@ -29,5 +29,6 @@ jobRouter.post("/apply", receiveCareerCv, sendJobApplication);
 jobRouter.get("/applications", authenticateUser, adminOnly, manageJobs, getJobApplications);
 jobRouter.get("/applications/:id/cv", authenticateUser, adminOnly, manageJobs, downloadJobApplicationCv);
 jobRouter.patch("/applications/:id", authenticateUser, adminOnly, manageJobs, updateJobApplication);
+jobRouter.delete("/applications/:id", authenticateUser, adminOnly, manageJobs, deleteJobApplication);
 
 export default jobRouter;

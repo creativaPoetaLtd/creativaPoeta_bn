@@ -1090,6 +1090,28 @@ export const updateReferralPartner = async (req: Request, res: Response): Promis
   }
 };
 
+export const deleteReferralPartner = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const partner = await ReferralPartner.findById(req.params.id).select("_id name partnerId");
+    if (!partner) {
+      res.status(404).json({ message: "Referral partner application not found." });
+      return;
+    }
+    const [linkedLeads, linkedRewards] = await Promise.all([
+      ReferralLead.countDocuments({ partner: partner._id }),
+      ReferralReward.countDocuments({ partner: partner._id }),
+    ]);
+    if (linkedLeads > 0 || linkedRewards > 0) {
+      res.status(409).json({ message: "This application cannot be deleted because client introductions or reward records are linked to it. Set its status to closed instead." });
+      return;
+    }
+    await partner.deleteOne();
+    res.status(200).json({ message: "Referral partner application deleted." });
+  } catch {
+    res.status(500).json({ message: "Failed to delete referral partner application." });
+  }
+};
+
 export const prepareReferralPartnerManualPackage = async (req: Request, res: Response): Promise<void> => {
   try {
     const partner = await ReferralPartner.findById(req.params.id).select("+accessSecretHash +referralCode");
@@ -1174,6 +1196,24 @@ export const updateReferralLead = async (req: Request, res: Response): Promise<v
     res.json({ lead });
   } catch {
     res.status(500).json({ message: "Failed to update referral lead." });
+  }
+};
+
+export const deleteReferralLead = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const lead = await ReferralLead.findById(req.params.id).select("_id companyName contactName");
+    if (!lead) {
+      res.status(404).json({ message: "Referral lead not found." });
+      return;
+    }
+    if (await ReferralReward.exists({ lead: lead._id })) {
+      res.status(409).json({ message: "This client introduction cannot be deleted because a reward record is linked to it. Keep it for financial traceability." });
+      return;
+    }
+    await lead.deleteOne();
+    res.status(200).json({ message: "Client introduction deleted." });
+  } catch {
+    res.status(500).json({ message: "Failed to delete client introduction." });
   }
 };
 

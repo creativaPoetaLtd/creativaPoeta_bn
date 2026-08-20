@@ -172,3 +172,16 @@ export const updateJobApplication = async (req: Request, res: Response, next: Ne
     } catch (error) { next(error); }
 };
 
+export const deleteJobApplication = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const application = await JobApplication.findById(req.params.id).select("_id");
+        if (!application) {
+            res.status(404).json({ message: "Application not found." });
+            return;
+        }
+        await JobApplicationFile.deleteOne({ application: application._id });
+        await application.deleteOne();
+        res.status(200).json({ message: "Application deleted." });
+    } catch (error) { next(error); }
+};
+

@@ -4,6 +4,8 @@ import {
   requestPartnerAccessRecovery,
   claimReferralLead,
   createManualReferralEntry,
+  deleteReferralLead,
+  deleteReferralPartner,
   submitDirectReferral,
   getReferralLeads,
   getReferralPartners,
@@ -44,9 +46,11 @@ router.get("/summary", authenticateUser, canRead, getReferralProgramSummary);
 router.post("/manual-entries", authenticateUser, canManage, createManualReferralEntry);
 router.get("/partners", authenticateUser, canRead, getReferralPartners);
 router.patch("/partners/:id", authenticateUser, canApprovePartners, updateReferralPartner);
+router.delete("/partners/:id", authenticateUser, canManage, deleteReferralPartner);
 router.post("/partners/:id/manual-package", authenticateUser, canApprovePartners, prepareReferralPartnerManualPackage);
 router.get("/leads", authenticateUser, canRead, getReferralLeads);
 router.patch("/leads/:id", authenticateUser, canManage, updateReferralLead);
+router.delete("/leads/:id", authenticateUser, canManage, deleteReferralLead);
 router.post("/leads/:id/claim", authenticateUser, canManage, claimReferralLead);
 router.get("/rewards", authenticateUser, canReadRewards, getReferralRewards);
 router.put("/leads/:leadId/reward", authenticateUser, canApproveRewards, upsertReferralReward);

@@ -27,9 +27,11 @@ router.get("/summary", authMiddleware_1.authenticateUser, canRead, referralProgr
 router.post("/manual-entries", authMiddleware_1.authenticateUser, canManage, referralProgramController_1.createManualReferralEntry);
 router.get("/partners", authMiddleware_1.authenticateUser, canRead, referralProgramController_1.getReferralPartners);
 router.patch("/partners/:id", authMiddleware_1.authenticateUser, canApprovePartners, referralProgramController_1.updateReferralPartner);
+router.delete("/partners/:id", authMiddleware_1.authenticateUser, canManage, referralProgramController_1.deleteReferralPartner);
 router.post("/partners/:id/manual-package", authMiddleware_1.authenticateUser, canApprovePartners, referralProgramController_1.prepareReferralPartnerManualPackage);
 router.get("/leads", authMiddleware_1.authenticateUser, canRead, referralProgramController_1.getReferralLeads);
 router.patch("/leads/:id", authMiddleware_1.authenticateUser, canManage, referralProgramController_1.updateReferralLead);
+router.delete("/leads/:id", authMiddleware_1.authenticateUser, canManage, referralProgramController_1.deleteReferralLead);
 router.post("/leads/:id/claim", authMiddleware_1.authenticateUser, canManage, referralProgramController_1.claimReferralLead);
 router.get("/rewards", authMiddleware_1.authenticateUser, canReadRewards, referralProgramController_1.getReferralRewards);
 router.put("/leads/:leadId/reward", authMiddleware_1.authenticateUser, canApproveRewards, referralProgramController_1.upsertReferralReward);
