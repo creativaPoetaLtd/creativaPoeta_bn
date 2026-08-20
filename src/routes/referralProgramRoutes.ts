@@ -10,6 +10,7 @@ import {
   getReferralProgramSummary,
   getReferralRewards,
   markReferralRewardPaid,
+  prepareReferralPartnerManualPackage,
   submitReferralLead,
   submitProspectReferral,
   updateReferralLead,
@@ -43,6 +44,7 @@ router.get("/summary", authenticateUser, canRead, getReferralProgramSummary);
 router.post("/manual-entries", authenticateUser, canManage, createManualReferralEntry);
 router.get("/partners", authenticateUser, canRead, getReferralPartners);
 router.patch("/partners/:id", authenticateUser, canApprovePartners, updateReferralPartner);
+router.post("/partners/:id/manual-package", authenticateUser, canApprovePartners, prepareReferralPartnerManualPackage);
 router.get("/leads", authenticateUser, canRead, getReferralLeads);
 router.patch("/leads/:id", authenticateUser, canManage, updateReferralLead);
 router.post("/leads/:id/claim", authenticateUser, canManage, claimReferralLead);

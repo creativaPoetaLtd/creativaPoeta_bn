@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.markReferralRewardPaid = exports.updateReferralRewardStatus = exports.upsertReferralReward = exports.getReferralRewards = exports.claimReferralLead = exports.updateReferralLead = exports.getReferralLeads = exports.updateReferralPartner = exports.getReferralPartners = exports.getReferralProgramSummary = exports.createManualReferralEntry = exports.submitProspectReferral = exports.submitDirectReferral = exports.submitReferralLead = exports.requestPartnerAccessRecovery = exports.applyToReferralProgram = exports.renderPartnerRejectionEmail = exports.renderPartnerApprovalEmail = exports.getPartnerNotificationCopy = void 0;
+exports.markReferralRewardPaid = exports.updateReferralRewardStatus = exports.upsertReferralReward = exports.getReferralRewards = exports.claimReferralLead = exports.updateReferralLead = exports.getReferralLeads = exports.prepareReferralPartnerManualPackage = exports.updateReferralPartner = exports.getReferralPartners = exports.getReferralProgramSummary = exports.createManualReferralEntry = exports.submitProspectReferral = exports.submitDirectReferral = exports.submitReferralLead = exports.requestPartnerAccessRecovery = exports.applyToReferralProgram = exports.renderPartnerRejectionEmail = exports.renderPartnerApprovalMessage = exports.renderPartnerApprovalEmail = exports.getPartnerNotificationCopy = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 const ReferralLead_1 = __importDefault(require("../models/ReferralLead"));
 const ReferralPartner_1 = __importDefault(require("../models/ReferralPartner"));
@@ -27,14 +27,14 @@ const cleanPhone = (value) => {
     const digits = raw.replace(/\D/g, "");
     return digits ? `${raw.startsWith("+") ? "+" : ""}${digits}` : "";
 };
-const contactPreferences = ["email", "whatsapp", "phone", "sms", "other"];
+const contactPreferences = ["email", "whatsapp"];
 const cleanContactPreference = (value, hasEmail, hasPhone) => {
     const candidate = clean(value, 20);
     if (!contactPreferences.includes(candidate))
         return hasEmail ? "email" : "whatsapp";
     if (candidate === "email" && !hasEmail && hasPhone)
         return "whatsapp";
-    if (["whatsapp", "phone", "sms"].includes(candidate) && !hasPhone && hasEmail)
+    if (candidate === "whatsapp" && !hasPhone && hasEmail)
         return "email";
     return candidate;
 };
@@ -194,6 +194,46 @@ const renderPartnerApprovalEmail = ({ partnerName, partnerId, accessUrl, shareUr
 `;
 };
 exports.renderPartnerApprovalEmail = renderPartnerApprovalEmail;
+const renderPartnerApprovalMessage = ({ partnerName, partnerId, accessUrl, shareUrl, locale = "en", }) => {
+    const copy = (0, exports.getPartnerNotificationCopy)(locale);
+    return [
+        `${copy.hello} ${partnerName},`,
+        "",
+        copy.welcome,
+        "",
+        `${copy.partnerId}: ${partnerId}`,
+        "",
+        `${copy.privateTitle}`,
+        copy.privateText,
+        accessUrl,
+        "",
+        `${copy.shareTitle}`,
+        copy.shareText,
+        shareUrl,
+        "",
+        copy.shareHelp,
+        "",
+        "Creativa Poeta",
+    ].join("\n");
+};
+exports.renderPartnerApprovalMessage = renderPartnerApprovalMessage;
+const buildPartnerAccessPackage = (partner, plainSecret) => {
+    const accessUrl = (0, referralProgramPolicy_1.buildPrivatePartnerAccessUrl)(FRONTEND_URL, partner.partnerId || "", plainSecret);
+    const shareUrl = `${FRONTEND_URL}/referral-partners?ref=${encodeURIComponent(partner.referralCode || "")}#referred-business`;
+    const copy = (0, exports.getPartnerNotificationCopy)(partner.locale);
+    return {
+        accessUrl,
+        shareUrl,
+        subject: copy.approvalSubject,
+        message: (0, exports.renderPartnerApprovalMessage)({
+            partnerName: partner.name,
+            partnerId: partner.partnerId || "",
+            accessUrl,
+            shareUrl,
+            locale: partner.locale,
+        }),
+    };
+};
 const renderPartnerRejectionEmail = ({ partnerName, reason, locale = "en", }) => {
     const copy = (0, exports.getPartnerNotificationCopy)(locale);
     return `<h2 style="margin:0 0 18px;color:#101828;font-size:26px;line-height:1.25;">${copy.rejectedTitle}</h2><p>${copy.hello} ${escapeHtml(partnerName)},</p><p>${copy.rejectedText}</p><p><strong>${copy.reason}:</strong> ${escapeHtml(reason)}</p>`;
@@ -773,10 +813,11 @@ const createManualReferralEntry = async (req, res) => {
             partner.activity.push({ type: "note", message: `Manual client introduction recorded for ${companyName || contactName}`, actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() });
         }
         await partner.save();
-        const accessUrl = plainSecret ? (0, referralProgramPolicy_1.buildPrivatePartnerAccessUrl)(FRONTEND_URL, partner.partnerId || "", plainSecret) : undefined;
-        const shareUrl = ["approved", "active"].includes(partner.status)
+        const accessPackage = plainSecret ? buildPartnerAccessPackage(partner, plainSecret) : undefined;
+        const accessUrl = accessPackage === null || accessPackage === void 0 ? void 0 : accessPackage.accessUrl;
+        const shareUrl = (accessPackage === null || accessPackage === void 0 ? void 0 : accessPackage.shareUrl) || (["approved", "active"].includes(partner.status)
             ? `${FRONTEND_URL}/referral-partners?ref=${encodeURIComponent(partner.referralCode || "")}#referred-business`
-            : undefined;
+            : undefined);
         let notification;
         if (approveNow && plainSecret && accessUrl && shareUrl) {
             const copy = (0, exports.getPartnerNotificationCopy)(partner.locale);
@@ -816,7 +857,15 @@ const createManualReferralEntry = async (req, res) => {
             await partner.save();
         }
         const safePartner = await ReferralPartner_1.default.findById(partner._id);
-        res.status(201).json({ partner: safePartner, lead, notification, accessUrl, shareUrl });
+        res.status(201).json({
+            partner: safePartner,
+            lead,
+            notification,
+            accessUrl,
+            shareUrl,
+            subject: accessPackage === null || accessPackage === void 0 ? void 0 : accessPackage.subject,
+            message: accessPackage === null || accessPackage === void 0 ? void 0 : accessPackage.message,
+        });
     }
     catch (error) {
         console.error("Manual referral entry failed:", error);
@@ -857,10 +906,19 @@ const getReferralPartners = async (req, res) => {
         if (search)
             filter.$or = ["name", "email", "phone", "country", "partnerId"].map((field) => ({ [field]: new RegExp(escapeRegex(search), "i") }));
         const [partners, total] = await Promise.all([
-            ReferralPartner_1.default.find(filter).sort({ accessRecoveryRequestedAt: -1, createdAt: -1 }).skip((page - 1) * limit).limit(limit),
+            ReferralPartner_1.default.find(filter).select("+referralCode").sort({ accessRecoveryRequestedAt: -1, createdAt: -1 }).skip((page - 1) * limit).limit(limit),
             ReferralPartner_1.default.countDocuments(filter),
         ]);
-        res.json({ partners, pagination: { currentPage: page, totalPages: Math.max(1, Math.ceil(total / limit)), total, limit } });
+        const safePartners = partners.map((partner) => {
+            const data = partner.toObject();
+            const referralCode = typeof data.referralCode === "string" ? data.referralCode : "";
+            delete data.referralCode;
+            if (["approved", "active"].includes(String(data.status)) && referralCode) {
+                data.shareUrl = `${FRONTEND_URL}/referral-partners?ref=${encodeURIComponent(referralCode)}#referred-business`;
+            }
+            return data;
+        });
+        res.json({ partners: safePartners, pagination: { currentPage: page, totalPages: Math.max(1, Math.ceil(total / limit)), total, limit } });
     }
     catch {
         res.status(500).json({ message: "Failed to fetch referral partners." });
@@ -905,11 +963,16 @@ const updateReferralPartner = async (req, res) => {
             partner.activity.push({ type: "access", message: "Secure partner access regenerated", actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() });
         await partner.save();
         let notification;
+        let subject = "";
+        let message = "";
         let accessUrl = "";
         let shareUrl = "";
         if (plainSecret) {
-            accessUrl = (0, referralProgramPolicy_1.buildPrivatePartnerAccessUrl)(FRONTEND_URL, partner.partnerId || "", plainSecret);
-            shareUrl = `${FRONTEND_URL}/referral-partners?ref=${encodeURIComponent(partner.referralCode || "")}#referred-business`;
+            const accessPackage = buildPartnerAccessPackage(partner, plainSecret);
+            accessUrl = accessPackage.accessUrl;
+            shareUrl = accessPackage.shareUrl;
+            subject = accessPackage.subject;
+            message = accessPackage.message;
             const copy = (0, exports.getPartnerNotificationCopy)(partner.locale);
             notification = await (0, referralPartnerNotificationService_1.deliverReferralPartnerNotification)({
                 target: {
@@ -978,6 +1041,8 @@ const updateReferralPartner = async (req, res) => {
             notification,
             accessUrl: accessUrl || undefined,
             shareUrl: shareUrl || undefined,
+            subject: subject || undefined,
+            message: message || undefined,
         });
     }
     catch {
@@ -985,6 +1050,42 @@ const updateReferralPartner = async (req, res) => {
     }
 };
 exports.updateReferralPartner = updateReferralPartner;
+const prepareReferralPartnerManualPackage = async (req, res) => {
+    try {
+        const partner = await ReferralPartner_1.default.findById(req.params.id).select("+accessSecretHash +referralCode");
+        if (!partner) {
+            res.status(404).json({ message: "Referral partner not found." });
+            return;
+        }
+        if (!["approved", "active"].includes(partner.status)) {
+            res.status(409).json({ message: "Approve this application before preparing a manual access package." });
+            return;
+        }
+        if (!partner.partnerId)
+            partner.partnerId = await createPartnerId(partner.program);
+        if (!partner.referralCode)
+            partner.referralCode = await createReferralCode();
+        const plainSecret = createSecret();
+        partner.accessSecretHash = hashSecret(plainSecret);
+        partner.accessRecoveryStatus = "resolved";
+        partner.accessRecoveryResolvedAt = new Date();
+        partner.activity.push({
+            type: "access",
+            message: "New secure access prepared for manual delivery; no automatic notification sent",
+            actorEmail: getAdminEmail(req),
+            actorName: getAdminName(req),
+            at: new Date(),
+        });
+        await partner.save();
+        const accessPackage = buildPartnerAccessPackage(partner, plainSecret);
+        const safePartner = await ReferralPartner_1.default.findById(partner._id);
+        res.json({ partner: safePartner, ...accessPackage });
+    }
+    catch {
+        res.status(500).json({ message: "Failed to prepare the manual partner access package." });
+    }
+};
+exports.prepareReferralPartnerManualPackage = prepareReferralPartnerManualPackage;
 const getReferralLeads = async (req, res) => {
     try {
         const { page, limit } = pagination(req);

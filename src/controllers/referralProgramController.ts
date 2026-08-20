@@ -27,13 +27,13 @@ const cleanPhone = (value: unknown) => {
   const digits = raw.replace(/\D/g, "");
   return digits ? `${raw.startsWith("+") ? "+" : ""}${digits}` : "";
 };
-const contactPreferences = ["email", "whatsapp", "phone", "sms", "other"] as const;
+const contactPreferences = ["email", "whatsapp"] as const;
 type ContactPreference = typeof contactPreferences[number];
 const cleanContactPreference = (value: unknown, hasEmail: boolean, hasPhone: boolean): ContactPreference => {
   const candidate = clean(value, 20) as ContactPreference;
   if (!contactPreferences.includes(candidate)) return hasEmail ? "email" : "whatsapp";
   if (candidate === "email" && !hasEmail && hasPhone) return "whatsapp";
-  if (["whatsapp", "phone", "sms"].includes(candidate) && !hasPhone && hasEmail) return "email";
+  if (candidate === "whatsapp" && !hasPhone && hasEmail) return "email";
   return candidate;
 };
 const escapeHtml = (value: unknown) => clean(value)
@@ -207,6 +207,64 @@ export const renderPartnerApprovalEmail = ({
 
   <p style="margin:0;color:#475467;"><strong>${copy.partnerId}:</strong> ${escapeHtml(partnerId)}</p>
 `;
+};
+
+export const renderPartnerApprovalMessage = ({
+  partnerName,
+  partnerId,
+  accessUrl,
+  shareUrl,
+  locale = "en",
+}: {
+  partnerName: string;
+  partnerId: string;
+  accessUrl: string;
+  shareUrl: string;
+  locale?: string;
+}) => {
+  const copy = getPartnerNotificationCopy(locale);
+  return [
+    `${copy.hello} ${partnerName},`,
+    "",
+    copy.welcome,
+    "",
+    `${copy.partnerId}: ${partnerId}`,
+    "",
+    `${copy.privateTitle}`,
+    copy.privateText,
+    accessUrl,
+    "",
+    `${copy.shareTitle}`,
+    copy.shareText,
+    shareUrl,
+    "",
+    copy.shareHelp,
+    "",
+    "Creativa Poeta",
+  ].join("\n");
+};
+
+const buildPartnerAccessPackage = (partner: {
+  name: string;
+  partnerId?: string;
+  referralCode?: string;
+  locale?: string;
+}, plainSecret: string) => {
+  const accessUrl = buildPrivatePartnerAccessUrl(FRONTEND_URL, partner.partnerId || "", plainSecret);
+  const shareUrl = `${FRONTEND_URL}/referral-partners?ref=${encodeURIComponent(partner.referralCode || "")}#referred-business`;
+  const copy = getPartnerNotificationCopy(partner.locale);
+  return {
+    accessUrl,
+    shareUrl,
+    subject: copy.approvalSubject,
+    message: renderPartnerApprovalMessage({
+      partnerName: partner.name,
+      partnerId: partner.partnerId || "",
+      accessUrl,
+      shareUrl,
+      locale: partner.locale,
+    }),
+  };
 };
 
 export const renderPartnerRejectionEmail = ({
@@ -803,10 +861,11 @@ export const createManualReferralEntry = async (req: Request, res: Response): Pr
     }
 
     await partner.save();
-    const accessUrl = plainSecret ? buildPrivatePartnerAccessUrl(FRONTEND_URL, partner.partnerId || "", plainSecret) : undefined;
-    const shareUrl = ["approved", "active"].includes(partner.status)
+    const accessPackage = plainSecret ? buildPartnerAccessPackage(partner, plainSecret) : undefined;
+    const accessUrl = accessPackage?.accessUrl;
+    const shareUrl = accessPackage?.shareUrl || (["approved", "active"].includes(partner.status)
       ? `${FRONTEND_URL}/referral-partners?ref=${encodeURIComponent(partner.referralCode || "")}#referred-business`
-      : undefined;
+      : undefined);
     let notification: ReferralNotificationDelivery | undefined;
     if (approveNow && plainSecret && accessUrl && shareUrl) {
       const copy = getPartnerNotificationCopy(partner.locale);
@@ -846,7 +905,15 @@ export const createManualReferralEntry = async (req: Request, res: Response): Pr
       await partner.save();
     }
     const safePartner = await ReferralPartner.findById(partner._id);
-    res.status(201).json({ partner: safePartner, lead, notification, accessUrl, shareUrl });
+    res.status(201).json({
+      partner: safePartner,
+      lead,
+      notification,
+      accessUrl,
+      shareUrl,
+      subject: accessPackage?.subject,
+      message: accessPackage?.message,
+    });
   } catch (error) {
     console.error("Manual referral entry failed:", error);
     res.status(500).json({ message: "Failed to create the manual referral entry." });
@@ -884,10 +951,19 @@ export const getReferralPartners = async (req: Request, res: Response): Promise<
     if (status && status !== "all" && partnerStatuses.includes(status as ReferralPartnerStatus)) filter.status = status;
     if (search) filter.$or = ["name", "email", "phone", "country", "partnerId"].map((field) => ({ [field]: new RegExp(escapeRegex(search), "i") }));
     const [partners, total] = await Promise.all([
-      ReferralPartner.find(filter).sort({ accessRecoveryRequestedAt: -1, createdAt: -1 }).skip((page - 1) * limit).limit(limit),
+      ReferralPartner.find(filter).select("+referralCode").sort({ accessRecoveryRequestedAt: -1, createdAt: -1 }).skip((page - 1) * limit).limit(limit),
       ReferralPartner.countDocuments(filter),
     ]);
-    res.json({ partners, pagination: { currentPage: page, totalPages: Math.max(1, Math.ceil(total / limit)), total, limit } });
+    const safePartners = partners.map((partner) => {
+      const data = partner.toObject() as unknown as Record<string, unknown>;
+      const referralCode = typeof data.referralCode === "string" ? data.referralCode : "";
+      delete data.referralCode;
+      if (["approved", "active"].includes(String(data.status)) && referralCode) {
+        data.shareUrl = `${FRONTEND_URL}/referral-partners?ref=${encodeURIComponent(referralCode)}#referred-business`;
+      }
+      return data;
+    });
+    res.json({ partners: safePartners, pagination: { currentPage: page, totalPages: Math.max(1, Math.ceil(total / limit)), total, limit } });
   } catch {
     res.status(500).json({ message: "Failed to fetch referral partners." });
   }
@@ -929,11 +1005,16 @@ export const updateReferralPartner = async (req: Request, res: Response): Promis
     await partner.save();
 
     let notification: ReferralNotificationDelivery | undefined;
+    let subject = "";
+    let message = "";
     let accessUrl = "";
     let shareUrl = "";
     if (plainSecret) {
-      accessUrl = buildPrivatePartnerAccessUrl(FRONTEND_URL, partner.partnerId || "", plainSecret);
-      shareUrl = `${FRONTEND_URL}/referral-partners?ref=${encodeURIComponent(partner.referralCode || "")}#referred-business`;
+      const accessPackage = buildPartnerAccessPackage(partner, plainSecret);
+      accessUrl = accessPackage.accessUrl;
+      shareUrl = accessPackage.shareUrl;
+      subject = accessPackage.subject;
+      message = accessPackage.message;
       const copy = getPartnerNotificationCopy(partner.locale);
       notification = await deliverReferralPartnerNotification({
         target: {
@@ -1001,9 +1082,46 @@ export const updateReferralPartner = async (req: Request, res: Response): Promis
       notification,
       accessUrl: accessUrl || undefined,
       shareUrl: shareUrl || undefined,
+      subject: subject || undefined,
+      message: message || undefined,
     });
   } catch {
     res.status(500).json({ message: "Failed to update referral partner." });
+  }
+};
+
+export const prepareReferralPartnerManualPackage = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const partner = await ReferralPartner.findById(req.params.id).select("+accessSecretHash +referralCode");
+    if (!partner) {
+      res.status(404).json({ message: "Referral partner not found." });
+      return;
+    }
+    if (!["approved", "active"].includes(partner.status)) {
+      res.status(409).json({ message: "Approve this application before preparing a manual access package." });
+      return;
+    }
+
+    if (!partner.partnerId) partner.partnerId = await createPartnerId(partner.program);
+    if (!partner.referralCode) partner.referralCode = await createReferralCode();
+    const plainSecret = createSecret();
+    partner.accessSecretHash = hashSecret(plainSecret);
+    partner.accessRecoveryStatus = "resolved";
+    partner.accessRecoveryResolvedAt = new Date();
+    partner.activity.push({
+      type: "access",
+      message: "New secure access prepared for manual delivery; no automatic notification sent",
+      actorEmail: getAdminEmail(req),
+      actorName: getAdminName(req),
+      at: new Date(),
+    });
+    await partner.save();
+
+    const accessPackage = buildPartnerAccessPackage(partner, plainSecret);
+    const safePartner = await ReferralPartner.findById(partner._id);
+    res.json({ partner: safePartner, ...accessPackage });
+  } catch {
+    res.status(500).json({ message: "Failed to prepare the manual partner access package." });
   }
 };
 

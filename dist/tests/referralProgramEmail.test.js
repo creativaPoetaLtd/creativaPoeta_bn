@@ -29,6 +29,22 @@ const emailTemplate_1 = require("../utils/emailTemplate");
     strict_1.default.match(html, /contact@creativapoeta\.com/);
     strict_1.default.match(html, /www\.creativapoeta\.com/);
 });
+(0, node_test_1.default)("manual approval package clearly identifies both links", () => {
+    const accessUrl = "https://creativapoeta.com/referral-partners/access?partner=CP-RP-ABC123#private-secret";
+    const shareUrl = "https://creativapoeta.com/referral-partners?ref=public-code#referred-business";
+    const message = (0, referralProgramController_1.renderPartnerApprovalMessage)({
+        partnerName: "Example Partner",
+        partnerId: "CP-RP-ABC123",
+        accessUrl,
+        shareUrl,
+        locale: "en",
+    });
+    strict_1.default.match(message, /Partner ID: CP-RP-ABC123/);
+    strict_1.default.match(message, /This personal, secure link is for you only/);
+    strict_1.default.match(message, /This public link is not a form for you/);
+    strict_1.default.equal(message.includes(accessUrl), true);
+    strict_1.default.equal(message.includes(shareUrl), true);
+});
 (0, node_test_1.default)("partner decision emails follow the applicant locale", () => {
     const french = (0, referralProgramController_1.getPartnerNotificationCopy)("fr-BE");
     const dutch = (0, referralProgramController_1.getPartnerNotificationCopy)("nl-BE");
