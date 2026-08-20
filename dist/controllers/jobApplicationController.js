@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateJobApplication = exports.getJobApplications = exports.downloadJobApplicationCv = exports.sendJobApplication = void 0;
 const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
 const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
+const communicationLocale_1 = require("../utils/communicationLocale");
 const dotenv_1 = __importDefault(require("dotenv"));
 const Job_1 = __importDefault(require("../models/Job"));
 const JobApplication_1 = __importDefault(require("../models/JobApplication"));
@@ -76,7 +77,7 @@ const sendJobApplication = async (req, res, next) => {
             discoverySourceOther: discoverySource === "other" ? discoverySourceOther : undefined,
             availability: clean(req.body.availability, 180),
             message: clean(req.body.message || req.body.additionalComments, 5000),
-            locale: clean(req.body.locale, 12),
+            locale: (0, communicationLocale_1.normalizeCommunicationLocale)(req.body.locale),
             consentAcceptedAt: new Date(),
         });
         if (req.file) {

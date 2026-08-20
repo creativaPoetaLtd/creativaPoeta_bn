@@ -4,6 +4,7 @@ export interface IQuery extends Document {
   name: string;
   email: string;
   message: string;
+  locale: string;
   status: "pending" | "replied" | "closed";
   isReplied: boolean;
   replyMessage?: string;
@@ -28,6 +29,7 @@ const QuerySchema: Schema = new Schema(
     name: { type: String, required: true },
     email: { type: String, required: true },
     message: { type: String, required: true },
+    locale: { type: String, trim: true, default: "en", maxlength: 12 },
     status: {
       type: String,
       enum: ["pending", "replied", "closed"],

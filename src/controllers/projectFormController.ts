@@ -4,6 +4,7 @@ import { sendAdminNotificationEmail } from "../utils/adminNotificationEmail";
 import { formatParagraphs } from "../utils/emailTemplate";
 import ProjectRequest from "../models/ProjectDescription";
 import dotenv from "dotenv";
+import { normalizeCommunicationLocale } from "../utils/communicationLocale";
 
 dotenv.config();
 
@@ -59,6 +60,7 @@ export const sendProjectInquiry = async (
       customServiceNeeds,
       serviceSpecificOtherDescription,
       additionalInfo,
+      locale,
     } = req.body;
 
     // Basic required field validation
@@ -85,6 +87,7 @@ export const sendProjectInquiry = async (
       customServiceNeeds: customServiceNeeds?.trim(),
       serviceSpecificOtherDescription: serviceSpecificOtherDescription?.trim(),
       additionalInfo: additionalInfo?.trim(),
+      locale: normalizeCommunicationLocale(locale),
       // status will default to "pending" from the model
     });
 

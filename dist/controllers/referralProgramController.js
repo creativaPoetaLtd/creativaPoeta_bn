@@ -12,6 +12,7 @@ const referralProgramPolicy_1 = require("../domain/referralProgramPolicy");
 const referralRateLimitService_1 = require("../services/referralRateLimitService");
 const referralPartnerNotificationService_1 = require("../services/referralPartnerNotificationService");
 const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
+const communicationLocale_1 = require("../utils/communicationLocale");
 const TERMS_VERSION = "2026-08-11";
 const FRONTEND_URL = (process.env.FRONTEND_URL || "https://creativapoeta.com").replace(/\/$/, "");
 const partnerStatuses = ["pending", "approved", "active", "rejected", "suspended", "closed"];
@@ -163,7 +164,7 @@ const partnerNotificationCopy = {
     },
 };
 const getPartnerNotificationCopy = (locale) => {
-    const normalized = String(locale || "en").toLowerCase().split(/[-_]/)[0];
+    const normalized = (0, communicationLocale_1.normalizeCommunicationLocale)(locale);
     return partnerNotificationCopy[normalized] || partnerNotificationCopy.en;
 };
 exports.getPartnerNotificationCopy = getPartnerNotificationCopy;
@@ -214,7 +215,7 @@ const applyToReferralProgram = async (req, res, next) => {
         const phone = cleanPhone((_d = req.body) === null || _d === void 0 ? void 0 : _d.phone);
         const preferredContact = cleanContactPreference((_e = req.body) === null || _e === void 0 ? void 0 : _e.preferredContact, Boolean(email), Boolean(phone));
         const country = clean((_f = req.body) === null || _f === void 0 ? void 0 : _f.country, 120);
-        const locale = clean((_g = req.body) === null || _g === void 0 ? void 0 : _g.locale, 12) || "fr";
+        const locale = (0, communicationLocale_1.normalizeCommunicationLocale)((_g = req.body) === null || _g === void 0 ? void 0 : _g.locale);
         const profileType = clean((_h = req.body) === null || _h === void 0 ? void 0 : _h.profileType, 120);
         const program = ((_j = req.body) === null || _j === void 0 ? void 0 : _j.program) === "business" ? "business" : "referral";
         const website = clean((_k = req.body) === null || _k === void 0 ? void 0 : _k.website, 500);
@@ -339,7 +340,7 @@ const submitReferralLead = async (req, res, next) => {
         const consentStatus = ((_p = req.body) === null || _p === void 0 ? void 0 : _p.consentStatus) === "agreed" ? "agreed" : "not_yet";
         const introductionMethod = clean((_q = req.body) === null || _q === void 0 ? void 0 : _q.introductionMethod, 120) || "partner_private_form";
         const introductionDetails = clean((_r = req.body) === null || _r === void 0 ? void 0 : _r.introductionDetails, 1500);
-        const locale = clean((_s = req.body) === null || _s === void 0 ? void 0 : _s.locale, 12) || partner.locale || "fr";
+        const locale = (0, communicationLocale_1.normalizeCommunicationLocale)(((_s = req.body) === null || _s === void 0 ? void 0 : _s.locale) || partner.locale);
         if ((clientType === "company" && !companyName) || !contactName || !serviceNeeded || !relationship) {
             res.status(400).json({ message: "Required referral fields are missing." });
             return;
@@ -422,7 +423,7 @@ const submitDirectReferral = async (req, res, next) => {
         const referrerCountry = clean((_f = req.body) === null || _f === void 0 ? void 0 : _f.referrerCountry, 120);
         const referrerProfileType = clean((_g = req.body) === null || _g === void 0 ? void 0 : _g.referrerProfileType, 120) || "individual";
         const referrerWebsite = clean((_h = req.body) === null || _h === void 0 ? void 0 : _h.referrerWebsite, 500);
-        const locale = clean((_j = req.body) === null || _j === void 0 ? void 0 : _j.locale, 12) || "fr";
+        const locale = (0, communicationLocale_1.normalizeCommunicationLocale)((_j = req.body) === null || _j === void 0 ? void 0 : _j.locale);
         const termsAccepted = ((_k = req.body) === null || _k === void 0 ? void 0 : _k.termsAccepted) === true;
         const clientType = ((_l = req.body) === null || _l === void 0 ? void 0 : _l.clientType) === "person" ? "person" : "company";
         const companyName = clean((_m = req.body) === null || _m === void 0 ? void 0 : _m.companyName, 220);
@@ -577,7 +578,7 @@ const submitProspectReferral = async (req, res, next) => {
         const serviceNeeded = clean((_j = req.body) === null || _j === void 0 ? void 0 : _j.serviceNeeded, 200);
         const budgetRange = clean((_k = req.body) === null || _k === void 0 ? void 0 : _k.budgetRange, 100);
         const needDescription = clean((_l = req.body) === null || _l === void 0 ? void 0 : _l.needDescription, 3000);
-        const locale = clean((_m = req.body) === null || _m === void 0 ? void 0 : _m.locale, 12) || "fr";
+        const locale = (0, communicationLocale_1.normalizeCommunicationLocale)((_m = req.body) === null || _m === void 0 ? void 0 : _m.locale);
         if ((clientType === "company" && !companyName) || !contactName || (!contactEmail && !contactPhone) || (contactEmail && !emailIsValid(contactEmail)) || !serviceNeeded || ((_o = req.body) === null || _o === void 0 ? void 0 : _o.contactConsent) !== true) {
             res.status(400).json({ message: "Required fields and permission to contact you are missing." });
             return;
@@ -653,7 +654,7 @@ const createManualReferralEntry = async (req, res) => {
             const phone = cleanPhone((_g = req.body) === null || _g === void 0 ? void 0 : _g.phone);
             const country = clean((_h = req.body) === null || _h === void 0 ? void 0 : _h.country, 120);
             const profileType = clean((_j = req.body) === null || _j === void 0 ? void 0 : _j.profileType, 120);
-            const locale = clean((_k = req.body) === null || _k === void 0 ? void 0 : _k.locale, 12) || "fr";
+            const locale = (0, communicationLocale_1.normalizeCommunicationLocale)((_k = req.body) === null || _k === void 0 ? void 0 : _k.locale);
             const program = ((_l = req.body) === null || _l === void 0 ? void 0 : _l.program) === "business" ? "business" : "referral";
             const preferredContact = cleanContactPreference((_m = req.body) === null || _m === void 0 ? void 0 : _m.preferredContact, Boolean(email), Boolean(phone));
             if (!name || (!email && !phone) || (email && !emailIsValid(email)) || !country || !profileType || ((_o = req.body) === null || _o === void 0 ? void 0 : _o.termsAccepted) !== true) {
@@ -762,7 +763,7 @@ const createManualReferralEntry = async (req, res) => {
                 consentStatus,
                 introductionMethod,
                 introductionDetails: clean((_3 = req.body) === null || _3 === void 0 ? void 0 : _3.introductionDetails, 1500),
-                locale: clean((_4 = req.body) === null || _4 === void 0 ? void 0 : _4.locale, 12) || partner.locale || "fr",
+                locale: (0, communicationLocale_1.normalizeCommunicationLocale)(((_4 = req.body) === null || _4 === void 0 ? void 0 : _4.locale) || partner.locale),
                 status,
                 activity: [
                     { type: "submitted", message: "Client introduction manually recorded by an administrator", actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() },

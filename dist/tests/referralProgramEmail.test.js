@@ -32,6 +32,9 @@ const emailTemplate_1 = require("../utils/emailTemplate");
 (0, node_test_1.default)("partner decision emails follow the applicant locale", () => {
     const french = (0, referralProgramController_1.getPartnerNotificationCopy)("fr-BE");
     const dutch = (0, referralProgramController_1.getPartnerNotificationCopy)("nl-BE");
+    const kinyarwanda = (0, referralProgramController_1.getPartnerNotificationCopy)("kiny-RW");
+    const defaultCopy = (0, referralProgramController_1.getPartnerNotificationCopy)();
+    const unknownCopy = (0, referralProgramController_1.getPartnerNotificationCopy)("unknown");
     const rejection = (0, referralProgramController_1.renderPartnerRejectionEmail)({
         partnerName: "Example Partner",
         reason: "Informations incomplètes",
@@ -39,6 +42,9 @@ const emailTemplate_1 = require("../utils/emailTemplate");
     });
     strict_1.default.match(french.approvedTitle, /approuvée/i);
     strict_1.default.match(dutch.approvedTitle, /goedgekeurd/i);
+    strict_1.default.match(kinyarwanda.approvedTitle, /bwemejwe/i);
+    strict_1.default.equal(defaultCopy.approvedTitle, (0, referralProgramController_1.getPartnerNotificationCopy)("en").approvedTitle);
+    strict_1.default.equal(unknownCopy.approvedTitle, (0, referralProgramController_1.getPartnerNotificationCopy)("en").approvedTitle);
     strict_1.default.match(rejection, /Informations incomplètes/);
     strict_1.default.match(rejection, /Bonjour Example Partner/);
 });

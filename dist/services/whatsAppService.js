@@ -7,6 +7,7 @@ exports.processWhatsAppWebhook = exports.markWhatsAppMessageRead = exports.sendW
 const WhatsAppConversation_1 = __importDefault(require("../models/WhatsAppConversation"));
 const WhatsAppMessage_1 = __importDefault(require("../models/WhatsAppMessage"));
 const ReferralPartner_1 = __importDefault(require("../models/ReferralPartner"));
+const communicationLocale_1 = require("../utils/communicationLocale");
 const whatsAppPolicy_1 = require("../domain/whatsAppPolicy");
 const getGraphApiVersion = () => process.env.WHATSAPP_GRAPH_API_VERSION || "v25.0";
 const getMediaData = (message) => {
@@ -71,8 +72,7 @@ const templateLanguageDefaults = {
     rw: "rw_RW",
 };
 const getWhatsAppTemplateLanguage = (locale) => {
-    const normalizedLocale = String(locale || "en").trim().toLowerCase();
-    const baseLocale = normalizedLocale.split(/[-_]/)[0] || "en";
+    const baseLocale = (0, communicationLocale_1.normalizeCommunicationLocale)(locale);
     const environmentKey = `WHATSAPP_TEMPLATE_LANGUAGE_${baseLocale.toUpperCase()}`;
     return process.env[environmentKey] || templateLanguageDefaults[baseLocale] || templateLanguageDefaults.en;
 };

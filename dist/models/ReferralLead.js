@@ -53,7 +53,7 @@ const ReferralLeadSchema = new mongoose_1.Schema({
     consentStatus: { type: String, enum: ["agreed", "not_yet", "prospect_submitted"], default: "not_yet" },
     introductionMethod: { type: String, required: true, trim: true },
     introductionDetails: { type: String, trim: true },
-    locale: { type: String, trim: true, default: "fr" },
+    locale: { type: String, trim: true, default: "en" },
     status: { type: String, enum: ["submitted", "waiting_for_introduction", "under_review", "accepted", "duplicate", "rejected", "contacted", "qualified", "proposal_sent", "won", "lost"], default: "submitted" },
     eligibility: { type: String, enum: ["pending", "eligible", "ineligible"], default: "pending" },
     decisionReason: { type: String, trim: true },

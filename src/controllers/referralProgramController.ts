@@ -10,6 +10,7 @@ import {
   ReferralNotificationDelivery,
 } from "../services/referralPartnerNotificationService";
 import { sendAdminNotificationEmail as sendAdminNotice } from "../utils/adminNotificationEmail";
+import { normalizeCommunicationLocale } from "../utils/communicationLocale";
 
 const TERMS_VERSION = "2026-08-11";
 const FRONTEND_URL = (process.env.FRONTEND_URL || "https://creativapoeta.com").replace(/\/$/, "");
@@ -166,7 +167,7 @@ const partnerNotificationCopy = {
 type PartnerNotificationLocale = keyof typeof partnerNotificationCopy;
 
 export const getPartnerNotificationCopy = (locale?: string) => {
-  const normalized = String(locale || "en").toLowerCase().split(/[-_]/)[0] as PartnerNotificationLocale;
+  const normalized = normalizeCommunicationLocale(locale) as PartnerNotificationLocale;
   return partnerNotificationCopy[normalized] || partnerNotificationCopy.en;
 };
 
@@ -237,7 +238,7 @@ export const applyToReferralProgram = async (req: Request, res: Response, next: 
     const phone = cleanPhone(req.body?.phone);
     const preferredContact = cleanContactPreference(req.body?.preferredContact, Boolean(email), Boolean(phone));
     const country = clean(req.body?.country, 120);
-    const locale = clean(req.body?.locale, 12) || "fr";
+    const locale = normalizeCommunicationLocale(req.body?.locale);
     const profileType = clean(req.body?.profileType, 120);
     const program = req.body?.program === "business" ? "business" : "referral";
     const website = clean(req.body?.website, 500);
@@ -372,7 +373,7 @@ export const submitReferralLead = async (req: Request, res: Response, next: Next
     const consentStatus = req.body?.consentStatus === "agreed" ? "agreed" : "not_yet";
     const introductionMethod = clean(req.body?.introductionMethod, 120) || "partner_private_form";
     const introductionDetails = clean(req.body?.introductionDetails, 1500);
-    const locale = clean(req.body?.locale, 12) || partner.locale || "fr";
+    const locale = normalizeCommunicationLocale(req.body?.locale || partner.locale);
 
     if ((clientType === "company" && !companyName) || !contactName || !serviceNeeded || !relationship) {
       res.status(400).json({ message: "Required referral fields are missing." });
@@ -456,7 +457,7 @@ export const submitDirectReferral = async (req: Request, res: Response, next: Ne
     const referrerCountry = clean(req.body?.referrerCountry, 120);
     const referrerProfileType = clean(req.body?.referrerProfileType, 120) || "individual";
     const referrerWebsite = clean(req.body?.referrerWebsite, 500);
-    const locale = clean(req.body?.locale, 12) || "fr";
+    const locale = normalizeCommunicationLocale(req.body?.locale);
     const termsAccepted = req.body?.termsAccepted === true;
 
     const clientType = req.body?.clientType === "person" ? "person" : "company";
@@ -609,7 +610,7 @@ export const submitProspectReferral = async (req: Request, res: Response, next: 
     const serviceNeeded = clean(req.body?.serviceNeeded, 200);
     const budgetRange = clean(req.body?.budgetRange, 100);
     const needDescription = clean(req.body?.needDescription, 3000);
-    const locale = clean(req.body?.locale, 12) || "fr";
+    const locale = normalizeCommunicationLocale(req.body?.locale);
     if ((clientType === "company" && !companyName) || !contactName || (!contactEmail && !contactPhone) || (contactEmail && !emailIsValid(contactEmail)) || !serviceNeeded || req.body?.contactConsent !== true) {
       res.status(400).json({ message: "Required fields and permission to contact you are missing." });
       return;
@@ -683,7 +684,7 @@ export const createManualReferralEntry = async (req: Request, res: Response): Pr
       const phone = cleanPhone(req.body?.phone);
       const country = clean(req.body?.country, 120);
       const profileType = clean(req.body?.profileType, 120);
-      const locale = clean(req.body?.locale, 12) || "fr";
+      const locale = normalizeCommunicationLocale(req.body?.locale);
       const program = req.body?.program === "business" ? "business" : "referral";
       const preferredContact = cleanContactPreference(req.body?.preferredContact, Boolean(email), Boolean(phone));
 
@@ -791,7 +792,7 @@ export const createManualReferralEntry = async (req: Request, res: Response): Pr
         consentStatus,
         introductionMethod,
         introductionDetails: clean(req.body?.introductionDetails, 1500),
-        locale: clean(req.body?.locale, 12) || partner.locale || "fr",
+        locale: normalizeCommunicationLocale(req.body?.locale || partner.locale),
         status,
         activity: [
           { type: "submitted", message: "Client introduction manually recorded by an administrator", actorEmail: getAdminEmail(req), actorName: getAdminName(req), at: new Date() },

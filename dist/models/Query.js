@@ -38,6 +38,7 @@ const QuerySchema = new mongoose_1.Schema({
     name: { type: String, required: true },
     email: { type: String, required: true },
     message: { type: String, required: true },
+    locale: { type: String, trim: true, default: "en", maxlength: 12 },
     status: {
         type: String,
         enum: ["pending", "replied", "closed"],

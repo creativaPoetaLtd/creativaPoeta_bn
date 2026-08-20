@@ -53,7 +53,7 @@ const JobApplicationSchema = new Schema<IJobApplication>(
     discoverySourceOther: { type: String, trim: true, maxlength: 300 },
     availability: { type: String, trim: true, maxlength: 180 },
     message: { type: String, trim: true, maxlength: 5000 },
-    locale: { type: String, trim: true, maxlength: 12 },
+    locale: { type: String, trim: true, maxlength: 12, default: "en" },
     status: { type: String, enum: ["new", "reviewing", "shortlisted", "rejected", "archived"], default: "new", index: true },
     consentAcceptedAt: { type: Date, required: true },
     reviewedByEmail: { type: String, trim: true, lowercase: true },

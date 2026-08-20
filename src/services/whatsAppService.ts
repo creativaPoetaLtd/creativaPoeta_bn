@@ -1,6 +1,7 @@
 import WhatsAppConversation from "../models/WhatsAppConversation";
 import WhatsAppMessage from "../models/WhatsAppMessage";
 import ReferralPartner from "../models/ReferralPartner";
+import { normalizeCommunicationLocale } from "../utils/communicationLocale";
 import {
   buildWhatsAppConversationKey,
   extractWhatsAppMessageText,
@@ -81,8 +82,7 @@ const templateLanguageDefaults: Record<string, string> = {
 };
 
 export const getWhatsAppTemplateLanguage = (locale: string) => {
-  const normalizedLocale = String(locale || "en").trim().toLowerCase();
-  const baseLocale = normalizedLocale.split(/[-_]/)[0] || "en";
+  const baseLocale = normalizeCommunicationLocale(locale);
   const environmentKey = `WHATSAPP_TEMPLATE_LANGUAGE_${baseLocale.toUpperCase()}`;
   return process.env[environmentKey] || templateLanguageDefaults[baseLocale] || templateLanguageDefaults.en;
 };

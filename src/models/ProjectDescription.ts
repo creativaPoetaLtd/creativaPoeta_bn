@@ -7,6 +7,7 @@ export interface IProjectRequest extends Document {
   phone: string;
   company?: string;
   additionalInfo?: string;
+  locale: string;
 
   // Service Information (New Structure)
   serviceType: string;
@@ -44,6 +45,7 @@ const ProjectRequestSchema: Schema = new Schema(
     phone: { type: String, required: true, trim: true },
     company: { type: String, trim: true },
     additionalInfo: { type: String, trim: true },
+    locale: { type: String, trim: true, default: "en", maxlength: 12 },
 
     // Service Information (New Structure)
     serviceType: { type: String, required: true, trim: true },

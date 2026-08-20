@@ -7,6 +7,8 @@ exports.deletePartnershipRequest = exports.replyToPartnershipRequest = exports.u
 const PartnershipRequest_1 = __importDefault(require("../models/PartnershipRequest"));
 const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
 const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
+const emailTemplate_1 = require("../utils/emailTemplate");
+const communicationLocale_1 = require("../utils/communicationLocale");
 const validStatuses = [
     "pending",
     "in_progress",
@@ -46,7 +48,7 @@ const createPartnershipRequest = async (req, res, next) => {
         const email = clean((_c = req.body) === null || _c === void 0 ? void 0 : _c.email, 320).toLowerCase();
         const phone = clean((_d = req.body) === null || _d === void 0 ? void 0 : _d.phone, 80);
         const partnershipType = clean((_e = req.body) === null || _e === void 0 ? void 0 : _e.partnershipType, 160);
-        const locale = clean((_f = req.body) === null || _f === void 0 ? void 0 : _f.locale, 12) || "fr";
+        const locale = (0, communicationLocale_1.normalizeCommunicationLocale)((_f = req.body) === null || _f === void 0 ? void 0 : _f.locale);
         const message = clean((_g = req.body) === null || _g === void 0 ? void 0 : _g.message, 5000);
         if (!name || !email || !partnershipType || !message) {
             res.status(400).json({ message: "Required fields are missing." });
@@ -226,7 +228,7 @@ const replyToPartnershipRequest = async (req, res) => {
     var _a, _b;
     try {
         const replyMessage = clean((_a = req.body) === null || _a === void 0 ? void 0 : _a.replyMessage, 10000);
-        const subject = clean((_b = req.body) === null || _b === void 0 ? void 0 : _b.subject, 300) || "Re: Partnership with Creativa Poeta";
+        const requestedSubject = clean((_b = req.body) === null || _b === void 0 ? void 0 : _b.subject, 300);
         if (!replyMessage) {
             res.status(400).json({ message: "Reply message is required." });
             return;
@@ -236,12 +238,11 @@ const replyToPartnershipRequest = async (req, res) => {
             res.status(404).json({ message: "Partnership request not found." });
             return;
         }
+        const subject = requestedSubject || (0, communicationLocale_1.getPartnershipReplySubject)(request.locale);
         if (!request.assignedToEmail) {
             assignToCurrentAdmin(request, req, "Partnership request assigned while replying");
         }
-        await (0, sendEmail_1.default)(request.email, subject, `<p>Hello ${escapeHtml(request.name)},</p>
-       <div>${escapeHtml(replyMessage).replace(/\n/g, "<br>")}</div>
-       <p>Creativa Poeta</p>`);
+        await (0, sendEmail_1.default)(request.email, subject, (0, emailTemplate_1.formatParagraphs)(replyMessage));
         request.replyMessage = replyMessage;
         request.repliedAt = new Date();
         request.repliedBy = getAdminEmail(req);

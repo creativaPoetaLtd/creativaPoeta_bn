@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import sendEmail from "../utils/sendEmail";
 import { getAdminNotificationEmail } from "../utils/adminNotificationEmail";
+import { normalizeCommunicationLocale } from "../utils/communicationLocale";
 import dotenv from "dotenv";
 import Job from "../models/Job";
 import JobApplication, { JobApplicationStatus } from "../models/JobApplication";
@@ -77,7 +78,7 @@ export const sendJobApplication = async (req: Request, res: Response, next: Next
             discoverySourceOther: discoverySource === "other" ? discoverySourceOther : undefined,
             availability: clean(req.body.availability, 180),
             message: clean(req.body.message || req.body.additionalComments, 5000),
-            locale: clean(req.body.locale, 12),
+            locale: normalizeCommunicationLocale(req.body.locale),
             consentAcceptedAt: new Date(),
         });
 

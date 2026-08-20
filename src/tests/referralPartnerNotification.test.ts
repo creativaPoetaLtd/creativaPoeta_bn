@@ -45,6 +45,8 @@ test("builds a normalized Meta template payload with deterministic parameters", 
     { type: "text", text: "CP-RP-ABC123" },
   ]);
   assert.equal(getWhatsAppTemplateLanguage("nl-BE"), "nl");
+  assert.equal(getWhatsAppTemplateLanguage("kiny-RW"), "rw_RW");
+  assert.equal(getWhatsAppTemplateLanguage("unknown"), "en_US");
 });
 
 test("keeps the documented approval template parameter order", () => {

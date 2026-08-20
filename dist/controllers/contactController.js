@@ -7,6 +7,8 @@ exports.deleteQuery = exports.releaseQuery = exports.claimQuery = exports.update
 const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
 const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
 const Query_1 = __importDefault(require("../models/Query"));
+const emailTemplate_1 = require("../utils/emailTemplate");
+const communicationLocale_1 = require("../utils/communicationLocale");
 const getAdminEmail = (req) => { var _a; return String(((_a = req.user) === null || _a === void 0 ? void 0 : _a.email) || "").toLowerCase().trim(); };
 const getAdminName = (req) => { var _a, _b; return String(((_a = req.user) === null || _a === void 0 ? void 0 : _a.name) || ((_b = req.user) === null || _b === void 0 ? void 0 : _b.email) || "Admin").trim(); };
 const addContactActivity = (query, req, type, message) => {
@@ -28,8 +30,10 @@ const assignContactToCurrentUser = (query, req, message = "Ticket pris en charge
 const canModifyContactAssignment = (req, query) => !query.assignedToEmail || query.assignedToEmail === getAdminEmail(req);
 // Submit contact form (public endpoint)
 const sendContactDetails = async (req, res, next) => {
+    var _a;
     try {
         const { fullName, email, message } = req.body;
+        const locale = (0, communicationLocale_1.normalizeCommunicationLocale)((_a = req.body) === null || _a === void 0 ? void 0 : _a.locale);
         if (!fullName || !email || !message) {
             res.status(400).json({ message: "Required fields are missing." });
             return;
@@ -39,6 +43,7 @@ const sendContactDetails = async (req, res, next) => {
             name: fullName,
             email,
             message,
+            locale,
             status: "pending",
             isReplied: false,
         });
@@ -175,22 +180,8 @@ const replyToQuery = async (req, res) => {
         // Send reply email
         let emailSent = false;
         try {
-            const emailSubject = subject || `Re: Your Contact Form Inquiry`;
-            const htmlContent = `
-                <h2>Reply to Your Contact Form Inquiry</h2>
-                <p>Dear ${query.name},</p>
-                <p>Thank you for contacting us. Here is our response:</p>
-                <div style="background-color: #f5f5f5; padding: 15px; margin: 10px 0; border-left: 4px solid #007bff;">
-                    ${replyMessage.replace(/\n/g, "<br>")}
-                </div>
-                <p>If you have any further questions, please don't hesitate to reach out.</p>
-                <p>Best regards,<br>Creativa Poeta Team</p>
-                
-                <hr style="margin: 20px 0;">
-                <h3>Original Message:</h3>
-                <p><strong>Your Message:</strong> ${query.message}</p>
-                <p><strong>Submitted:</strong> ${query.createdAt}</p>
-            `;
+            const emailSubject = subject || (0, communicationLocale_1.getContactReplySubject)(query.locale);
+            const htmlContent = (0, emailTemplate_1.formatParagraphs)(String(replyMessage).trim());
             await (0, sendEmail_1.default)(query.email, emailSubject, htmlContent);
             emailSent = true;
         }

@@ -41,6 +41,7 @@ const ProjectRequestSchema = new mongoose_1.Schema({
     phone: { type: String, required: true, trim: true },
     company: { type: String, trim: true },
     additionalInfo: { type: String, trim: true },
+    locale: { type: String, trim: true, default: "en", maxlength: 12 },
     // Service Information (New Structure)
     serviceType: { type: String, required: true, trim: true },
     selectedServices: [{ type: String, trim: true }],

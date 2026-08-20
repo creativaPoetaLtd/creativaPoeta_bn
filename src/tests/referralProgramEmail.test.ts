@@ -36,6 +36,9 @@ test("common branded email signature no longer exposes a telephone number", () =
 test("partner decision emails follow the applicant locale", () => {
   const french = getPartnerNotificationCopy("fr-BE");
   const dutch = getPartnerNotificationCopy("nl-BE");
+  const kinyarwanda = getPartnerNotificationCopy("kiny-RW");
+  const defaultCopy = getPartnerNotificationCopy();
+  const unknownCopy = getPartnerNotificationCopy("unknown");
   const rejection = renderPartnerRejectionEmail({
     partnerName: "Example Partner",
     reason: "Informations incomplètes",
@@ -44,6 +47,9 @@ test("partner decision emails follow the applicant locale", () => {
 
   assert.match(french.approvedTitle, /approuvée/i);
   assert.match(dutch.approvedTitle, /goedgekeurd/i);
+  assert.match(kinyarwanda.approvedTitle, /bwemejwe/i);
+  assert.equal(defaultCopy.approvedTitle, getPartnerNotificationCopy("en").approvedTitle);
+  assert.equal(unknownCopy.approvedTitle, getPartnerNotificationCopy("en").approvedTitle);
   assert.match(rejection, /Informations incomplètes/);
   assert.match(rejection, /Bonjour Example Partner/);
 });

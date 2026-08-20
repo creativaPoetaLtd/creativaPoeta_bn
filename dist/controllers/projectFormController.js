@@ -9,6 +9,7 @@ const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
 const emailTemplate_1 = require("../utils/emailTemplate");
 const ProjectDescription_1 = __importDefault(require("../models/ProjectDescription"));
 const dotenv_1 = __importDefault(require("dotenv"));
+const communicationLocale_1 = require("../utils/communicationLocale");
 dotenv_1.default.config();
 const renderProjectReplyContent = (replyMessage) => (0, emailTemplate_1.formatParagraphs)(String(replyMessage || "").trim());
 exports.renderProjectReplyContent = renderProjectReplyContent;
@@ -42,7 +43,7 @@ const getProjectBucket = (request) => {
 };
 const sendProjectInquiry = async (req, res, next) => {
     try {
-        const { name, email, phone, company, serviceType, selectedServices, customServiceDescription, customServiceNeeds, serviceSpecificOtherDescription, additionalInfo, } = req.body;
+        const { name, email, phone, company, serviceType, selectedServices, customServiceDescription, customServiceNeeds, serviceSpecificOtherDescription, additionalInfo, locale, } = req.body;
         // Basic required field validation
         if (!name || !email || !phone || !serviceType) {
             res.status(400).json({
@@ -66,6 +67,7 @@ const sendProjectInquiry = async (req, res, next) => {
             customServiceNeeds: customServiceNeeds === null || customServiceNeeds === void 0 ? void 0 : customServiceNeeds.trim(),
             serviceSpecificOtherDescription: serviceSpecificOtherDescription === null || serviceSpecificOtherDescription === void 0 ? void 0 : serviceSpecificOtherDescription.trim(),
             additionalInfo: additionalInfo === null || additionalInfo === void 0 ? void 0 : additionalInfo.trim(),
+            locale: (0, communicationLocale_1.normalizeCommunicationLocale)(locale),
             // status will default to "pending" from the model
         });
         const savedRequest = await projectRequest.save();

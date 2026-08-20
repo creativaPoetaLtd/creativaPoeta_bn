@@ -39,6 +39,8 @@ const approvalContent = {
         { type: "text", text: "CP-RP-ABC123" },
     ]);
     strict_1.default.equal((0, whatsAppService_1.getWhatsAppTemplateLanguage)("nl-BE"), "nl");
+    strict_1.default.equal((0, whatsAppService_1.getWhatsAppTemplateLanguage)("kiny-RW"), "rw_RW");
+    strict_1.default.equal((0, whatsAppService_1.getWhatsAppTemplateLanguage)("unknown"), "en_US");
 });
 (0, node_test_1.default)("keeps the documented approval template parameter order", () => {
     const template = (0, referralPartnerNotificationService_1.getReferralWhatsAppTemplate)({

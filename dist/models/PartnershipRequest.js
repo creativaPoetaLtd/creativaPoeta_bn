@@ -40,7 +40,7 @@ const PartnershipRequestSchema = new mongoose_1.Schema({
     email: { type: String, required: true, trim: true, lowercase: true },
     phone: { type: String, trim: true },
     partnershipType: { type: String, required: true, trim: true },
-    locale: { type: String, trim: true, default: "fr" },
+    locale: { type: String, trim: true, default: "en" },
     message: { type: String, required: true, trim: true },
     status: {
         type: String,

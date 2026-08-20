@@ -4,6 +4,11 @@ import PartnershipRequest, {
 } from "../models/PartnershipRequest";
 import sendEmail from "../utils/sendEmail";
 import { sendAdminNotificationEmail } from "../utils/adminNotificationEmail";
+import { formatParagraphs } from "../utils/emailTemplate";
+import {
+  getPartnershipReplySubject,
+  normalizeCommunicationLocale,
+} from "../utils/communicationLocale";
 
 const validStatuses: PartnershipRequestStatus[] = [
   "pending",
@@ -60,7 +65,7 @@ export const createPartnershipRequest = async (
     const email = clean(req.body?.email, 320).toLowerCase();
     const phone = clean(req.body?.phone, 80);
     const partnershipType = clean(req.body?.partnershipType, 160);
-    const locale = clean(req.body?.locale, 12) || "fr";
+    const locale = normalizeCommunicationLocale(req.body?.locale);
     const message = clean(req.body?.message, 5000);
 
     if (!name || !email || !partnershipType || !message) {
@@ -257,7 +262,7 @@ export const updatePartnershipRequestStatus = async (
 export const replyToPartnershipRequest = async (req: Request, res: Response): Promise<void> => {
   try {
     const replyMessage = clean(req.body?.replyMessage, 10000);
-    const subject = clean(req.body?.subject, 300) || "Re: Partnership with Creativa Poeta";
+    const requestedSubject = clean(req.body?.subject, 300);
     if (!replyMessage) {
       res.status(400).json({ message: "Reply message is required." });
       return;
@@ -269,6 +274,8 @@ export const replyToPartnershipRequest = async (req: Request, res: Response): Pr
       return;
     }
 
+    const subject = requestedSubject || getPartnershipReplySubject(request.locale);
+
     if (!request.assignedToEmail) {
       assignToCurrentAdmin(request, req, "Partnership request assigned while replying");
     }
@@ -276,9 +283,7 @@ export const replyToPartnershipRequest = async (req: Request, res: Response): Pr
     await sendEmail(
       request.email,
       subject,
-      `<p>Hello ${escapeHtml(request.name)},</p>
-       <div>${escapeHtml(replyMessage).replace(/\n/g, "<br>")}</div>
-       <p>Creativa Poeta</p>`
+      formatParagraphs(replyMessage)
     );
 
     request.replyMessage = replyMessage;

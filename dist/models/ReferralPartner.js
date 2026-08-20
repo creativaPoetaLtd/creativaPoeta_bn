@@ -42,7 +42,7 @@ const ReferralPartnerSchema = new mongoose_1.Schema({
     phone: { type: String, trim: true },
     preferredContact: { type: String, enum: ["email", "whatsapp", "phone", "sms", "other"], default: "email" },
     country: { type: String, required: true, trim: true },
-    locale: { type: String, trim: true, default: "fr" },
+    locale: { type: String, trim: true, default: "en" },
     profileType: { type: String, required: true, trim: true },
     program: { type: String, enum: ["referral", "business"], default: "referral" },
     website: { type: String, trim: true },

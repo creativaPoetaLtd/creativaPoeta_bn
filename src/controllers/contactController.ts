@@ -2,6 +2,11 @@ import { Request, Response, NextFunction } from "express";
 import sendEmail from "../utils/sendEmail";
 import { sendAdminNotificationEmail } from "../utils/adminNotificationEmail";
 import Query, { IQuery } from "../models/Query";
+import { formatParagraphs } from "../utils/emailTemplate";
+import {
+  getContactReplySubject,
+  normalizeCommunicationLocale,
+} from "../utils/communicationLocale";
 
 const getAdminEmail = (req: Request) => String((req.user as any)?.email || "").toLowerCase().trim();
 const getAdminName = (req: Request) => String((req.user as any)?.name || (req.user as any)?.email || "Admin").trim();
@@ -35,6 +40,7 @@ export const sendContactDetails = async (
 ): Promise<void> => {
   try {
     const { fullName, email, message } = req.body;
+    const locale = normalizeCommunicationLocale(req.body?.locale);
 
     if (!fullName || !email || !message) {
       res.status(400).json({ message: "Required fields are missing." });
@@ -46,6 +52,7 @@ export const sendContactDetails = async (
       name: fullName,
       email,
       message,
+      locale,
       status: "pending",
       isReplied: false,
     });
@@ -200,22 +207,8 @@ export const replyToQuery = async (
     // Send reply email
     let emailSent = false;
     try {
-      const emailSubject = subject || `Re: Your Contact Form Inquiry`;
-      const htmlContent = `
-                <h2>Reply to Your Contact Form Inquiry</h2>
-                <p>Dear ${query.name},</p>
-                <p>Thank you for contacting us. Here is our response:</p>
-                <div style="background-color: #f5f5f5; padding: 15px; margin: 10px 0; border-left: 4px solid #007bff;">
-                    ${replyMessage.replace(/\n/g, "<br>")}
-                </div>
-                <p>If you have any further questions, please don't hesitate to reach out.</p>
-                <p>Best regards,<br>Creativa Poeta Team</p>
-                
-                <hr style="margin: 20px 0;">
-                <h3>Original Message:</h3>
-                <p><strong>Your Message:</strong> ${query.message}</p>
-                <p><strong>Submitted:</strong> ${query.createdAt}</p>
-            `;
+      const emailSubject = subject || getContactReplySubject(query.locale);
+      const htmlContent = formatParagraphs(String(replyMessage).trim());
 
       await sendEmail(query.email, emailSubject, htmlContent);
       emailSent = true;
