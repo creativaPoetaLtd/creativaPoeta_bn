@@ -29,7 +29,7 @@ const mfa_1 = require("../security/mfa");
     process.env.MFA_ENCRYPTION_KEY_BASE64 = Buffer.alloc(32, 8).toString("base64");
     try {
         const setup = await (0, mfa_1.createMfaSetup)("admin@example.com");
-        const token = await (0, otplib_1.generate)({ secret: setup.secret });
+        const token = otplib_1.authenticator.generate(setup.secret);
         strict_1.default.equal(await (0, mfa_1.verifyMfaCode)(setup.secret, token), true);
         strict_1.default.equal(await (0, mfa_1.verifyMfaCode)(setup.secret, "00000"), false);
         const codes = (0, mfa_1.generateRecoveryCodes)();

@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import QRCode from "qrcode";
-import { generateSecret, generateURI, verify } from "otplib";
+import { authenticator } from "otplib";
 
 const MFA_KEY_BYTES = 32;
 const RECOVERY_CODE_COUNT = 10;
@@ -11,7 +11,7 @@ const getEncryptionKey = () => {
   const key = Buffer.from(encoded, "base64");
   if (key.length !== MFA_KEY_BYTES) {
     throw new Error("MFA_ENCRYPTION_KEY_BASE64 must contain exactly 32 random bytes.");
-}
+  }
   return key;
 };
 
@@ -43,14 +43,8 @@ export const decryptMfaSecret = (payload: string, userId: string) => {
 };
 
 export const createMfaSetup = async (email: string) => {
-  const secret = generateSecret({ length: 20 });
-  const uri = generateURI({
-    issuer: "Creativa Poeta",
-    label: email,
-    secret,
-    digits: 6,
-    period: 30,
-  });
+  const secret = authenticator.generateSecret(20);
+  const uri = authenticator.keyuri(email, "Creativa Poeta", secret);
   return {
     secret,
     qrCodeDataUrl: await QRCode.toDataURL(uri, {
@@ -64,8 +58,9 @@ export const createMfaSetup = async (email: string) => {
 export const verifyMfaCode = async (secret: string, token: unknown) => {
   const normalized = String(token || "").replace(/\s/g, "");
   if (!/^\d{6}$/.test(normalized)) return false;
-  const result = await verify({ secret, token: normalized, epochTolerance: 30 });
-  return result.valid;
+  const verifier = authenticator.clone();
+  verifier.options = { window: 1 };
+  return verifier.verify({ secret, token: normalized });
 };
 
 export const normalizeRecoveryCode = (value: unknown) =>

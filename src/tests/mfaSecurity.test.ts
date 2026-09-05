@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { generate } from "otplib";
+import { authenticator } from "otplib";
 import {
   createMfaSetup,
   decryptMfaSecret,
@@ -30,7 +30,7 @@ test("TOTP codes and one-time recovery codes are validated safely", async () => 
   process.env.MFA_ENCRYPTION_KEY_BASE64 = Buffer.alloc(32, 8).toString("base64");
   try {
     const setup = await createMfaSetup("admin@example.com");
-    const token = await generate({ secret: setup.secret });
+    const token = authenticator.generate(setup.secret);
     assert.equal(await verifyMfaCode(setup.secret, token), true);
     assert.equal(await verifyMfaCode(setup.secret, "00000"), false);
 

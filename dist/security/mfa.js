@@ -43,14 +43,8 @@ const decryptMfaSecret = (payload, userId) => {
 };
 exports.decryptMfaSecret = decryptMfaSecret;
 const createMfaSetup = async (email) => {
-    const secret = (0, otplib_1.generateSecret)({ length: 20 });
-    const uri = (0, otplib_1.generateURI)({
-        issuer: "Creativa Poeta",
-        label: email,
-        secret,
-        digits: 6,
-        period: 30,
-    });
+    const secret = otplib_1.authenticator.generateSecret(20);
+    const uri = otplib_1.authenticator.keyuri(email, "Creativa Poeta", secret);
     return {
         secret,
         qrCodeDataUrl: await qrcode_1.default.toDataURL(uri, {
@@ -65,8 +59,9 @@ const verifyMfaCode = async (secret, token) => {
     const normalized = String(token || "").replace(/\s/g, "");
     if (!/^\d{6}$/.test(normalized))
         return false;
-    const result = await (0, otplib_1.verify)({ secret, token: normalized, epochTolerance: 30 });
-    return result.valid;
+    const verifier = otplib_1.authenticator.clone();
+    verifier.options = { window: 1 };
+    return verifier.verify({ secret, token: normalized });
 };
 exports.verifyMfaCode = verifyMfaCode;
 const normalizeRecoveryCode = (value) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
