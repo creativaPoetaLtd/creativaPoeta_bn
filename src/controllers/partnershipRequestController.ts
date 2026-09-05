@@ -9,6 +9,7 @@ import {
   getPartnershipReplySubject,
   normalizeCommunicationLocale,
 } from "../utils/communicationLocale";
+import { moveDocumentToTrash } from "../services/trashService";
 
 const validStatuses: PartnershipRequestStatus[] = [
   "pending",
@@ -302,11 +303,17 @@ export const replyToPartnershipRequest = async (req: Request, res: Response): Pr
 
 export const deletePartnershipRequest = async (req: Request, res: Response): Promise<void> => {
   try {
-    const request = await PartnershipRequest.findByIdAndDelete(req.params.id);
+    const request = await PartnershipRequest.findById(req.params.id);
     if (!request) {
       res.status(404).json({ message: "Partnership request not found." });
       return;
     }
+    await moveDocumentToTrash({
+      entityType: "partnership_request",
+      document: request,
+      label: `${request.name || request.company || "Partnership request"} · ${request.email || request._id}`,
+      req,
+    });
     res.status(200).json({ message: "Partnership request deleted." });
   } catch (error) {
     res.status(500).json({ message: "Failed to delete partnership request." });

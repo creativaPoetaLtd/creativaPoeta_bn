@@ -15,6 +15,7 @@ import analyticsRouter from "./analyticsRoutes";
 import healthRouter from "./healthRoutes";
 import referralProgramRouter from "./referralProgramRoutes";
 import whatsAppRouter from "./whatsAppRoutes";
+import trashRouter from "./trashRoutes";
 import { authenticateUser } from "../middleware/authMiddleware";
 import { authorizeAdminPermission } from "../middleware/permissionMiddleware";
 
@@ -33,6 +34,7 @@ router.use("/visibility-audit", visibilityAuditRouter);
 router.use("/partnership-requests", partnershipRequestRouter);
 router.use("/referral-program", referralProgramRouter);
 router.use("/whatsapp", whatsAppRouter);
+router.use("/trash", trashRouter);
 router.use("/analytics", analyticsRouter);
 router.use("/health", healthRouter);
 

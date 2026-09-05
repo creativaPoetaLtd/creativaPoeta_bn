@@ -2,12 +2,13 @@ import { Request, Response } from "express";
 import EmailMessage from "../models/EmailMessage";
 import OutboundEmail from "../models/OutboundEmail";
 import User from "../models/User";
-import { getEffectiveAdminRole } from "../middleware/authMiddleware";
+import { getEffectiveAdminRole, isRootAdminEmail } from "../middleware/authMiddleware";
 import { setMessageSeenOnServer, syncConfiguredMailboxes } from "../services/emailSyncService";
 import sendEmail from "../utils/sendEmail";
 import { sendAdminNotificationEmail } from "../utils/adminNotificationEmail";
 import { escapeHtml, formatParagraphs, renderQuotedEmailBlock } from "../utils/emailTemplate";
 import { SPAM_FOLDER, spamMessageMongoFilter } from "../utils/emailFilters";
+import { moveDocumentToTrash } from "../services/trashService";
 
 const allowedStatuses = ["new", "read", "replied", "archived"];
 const MAX_ATTACHMENT_TOTAL_BYTES = 8 * 1024 * 1024;
@@ -80,7 +81,7 @@ const getSenderDisplayName = (req: Request, fromEmail?: string) => {
   return `${adminName} from Creativa Poeta`;
 };
 
-const enrichEmailOwnerRoles = async (emails: any[]) => {
+const enrichEmailOwnerRoles = async (emails: any[], req?: Request) => {
   const rows = emails.map((email) =>
     typeof email?.toObject === "function" ? email.toObject() : { ...email }
   );
@@ -92,16 +93,33 @@ const enrichEmailOwnerRoles = async (emails: any[]) => {
 
   const owners = await User.find({ email: { $in: ownerEmails } }).select("email role").lean();
   const roleByEmail = new Map(
-    owners.map((owner: any) => [normalizeEmail(owner.email), owner.role])
+    owners.map((owner: any) => [
+      normalizeEmail(owner.email),
+      getEffectiveAdminRole(owner.role, owner.email),
+    ])
   );
 
-  return rows.map((email) => ({
-    ...email,
-    assignedToRole: roleByEmail.get(normalizeEmail(email.assignedToEmail)),
-  }));
+  const requesterIsSuperAdmin = req
+    ? getEffectiveAdminRole((req.user as any)?.role, (req.user as any)?.email) === "super_admin"
+    : false;
+
+  return rows.map((email) => {
+    const ownerEmail = normalizeEmail(email.assignedToEmail);
+    const ownerRole = roleByEmail.get(ownerEmail);
+    if (!requesterIsSuperAdmin && (ownerRole === "super_admin" || isRootAdminEmail(ownerEmail))) {
+      return {
+        ...email,
+        assignedToEmail: undefined,
+        assignedToName: "Creativa Poeta",
+        assignedToRole: undefined,
+      };
+    }
+    return { ...email, assignedToRole: ownerRole };
+  });
 };
 
-const enrichEmailOwnerRole = async (email: any) => (await enrichEmailOwnerRoles([email]))[0];
+const enrichEmailOwnerRole = async (email: any, req?: Request) =>
+  (await enrichEmailOwnerRoles([email], req))[0];
 
 const canManageSharedMailboxes = (req: Request) =>
   ["super_admin", "admin_0"].includes(getEffectiveAdminRole((req.user as any)?.role, (req.user as any)?.email));
@@ -528,7 +546,7 @@ export const getEmails = async (req: Request, res: Response): Promise<void> => {
       ? Array.from(new Set([...allowedMailboxAddresses, ...syncedMailboxes])).sort()
       : syncedMailboxes;
 
-    const emailsWithOwnerRoles = await enrichEmailOwnerRoles(emails);
+    const emailsWithOwnerRoles = await enrichEmailOwnerRoles(emails, req);
 
     res.status(200).json({
       message: "Emails fetched successfully",
@@ -624,7 +642,7 @@ export const getEmail = async (req: Request, res: Response): Promise<void> => {
       syncSeenFlagInBackground(email, true);
     }
 
-    res.status(200).json({ message: "Email fetched successfully", email: await enrichEmailOwnerRole(email) });
+    res.status(200).json({ message: "Email fetched successfully", email: await enrichEmailOwnerRole(email, req) });
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to fetch email",
@@ -656,7 +674,7 @@ export const claimEmail = async (req: Request, res: Response): Promise<void> => 
     assignEmailToCurrentUser(email, req);
     await email.save();
 
-    res.status(200).json({ message: "Email assigned", email: await enrichEmailOwnerRole(email) });
+    res.status(200).json({ message: "Email assigned", email: await enrichEmailOwnerRole(email, req) });
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to assign email",
@@ -692,7 +710,7 @@ export const releaseEmail = async (req: Request, res: Response): Promise<void> =
     addEmailActivity(email, req, "released", `Ticket libere de ${previousOwner}`);
     await email.save();
 
-    res.status(200).json({ message: "Email released", email: await enrichEmailOwnerRole(email) });
+    res.status(200).json({ message: "Email released", email: await enrichEmailOwnerRole(email, req) });
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to release email",
@@ -819,13 +837,19 @@ export const deleteOutboundEmail = async (req: Request, res: Response): Promise<
   try {
     const outboundDeleteFilter: any = { _id: req.params.id };
     applyOutboundOwnerAccess(req, outboundDeleteFilter);
-    const email = await OutboundEmail.findOneAndDelete(outboundDeleteFilter);
+    const email = await OutboundEmail.findOne(outboundDeleteFilter);
 
     if (!email) {
       res.status(404).json({ message: "Outbound email not found" });
       return;
     }
 
+    await moveDocumentToTrash({
+      entityType: "outbound_email",
+      document: email,
+      label: `${email.subject || "Outbound email"} · ${(email.to || []).join(", ") || email._id}`,
+      req,
+    });
     res.status(200).json({ message: "Email deleted" });
   } catch (error: any) {
     res.status(500).json({
@@ -917,7 +941,7 @@ export const replyToEmail = async (req: Request, res: Response): Promise<void> =
     addEmailActivity(email, req, "replied", `Reply sent: ${replySubject}`);
     await email.save();
 
-    res.status(200).json({ message: "Reply sent successfully", email: await enrichEmailOwnerRole(email) });
+    res.status(200).json({ message: "Reply sent successfully", email: await enrichEmailOwnerRole(email, req) });
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to send email reply",
@@ -1044,7 +1068,7 @@ export const updateEmailStatus = async (req: Request, res: Response): Promise<vo
       syncSeenFlagInBackground(email, shouldBeSeenOnServer);
     }
 
-    res.status(200).json({ message: "Email status updated", email: await enrichEmailOwnerRole(email) });
+    res.status(200).json({ message: "Email status updated", email: await enrichEmailOwnerRole(email, req) });
   } catch (error: any) {
     res.status(500).json({
       message: "Failed to update email status",
@@ -1057,13 +1081,19 @@ export const deleteEmail = async (req: Request, res: Response): Promise<void> =>
   try {
     const deleteFilter: any = { _id: req.params.id };
     await applyInboundMailboxAccess(req, deleteFilter);
-    const email = await EmailMessage.findOneAndDelete(deleteFilter);
+    const email = await EmailMessage.findOne(deleteFilter);
 
     if (!email) {
       res.status(404).json({ message: "Email not found" });
       return;
     }
 
+    await moveDocumentToTrash({
+      entityType: "inbound_email",
+      document: email,
+      label: `${email.subject || "Inbound email"} · ${email.fromEmail || email._id}`,
+      req,
+    });
     res.status(200).json({ message: "Email deleted from dashboard copy" });
   } catch (error: any) {
     res.status(500).json({

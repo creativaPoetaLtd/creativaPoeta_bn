@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const WhatsAppMessageSchema = new mongoose_1.Schema({
     conversationId: {
         type: mongoose_1.Schema.Types.ObjectId,
@@ -41,7 +42,7 @@ const WhatsAppMessageSchema = new mongoose_1.Schema({
         required: true,
         index: true,
     },
-    providerMessageId: { type: String, required: true, unique: true, index: true },
+    providerMessageId: { type: String, required: true },
     contextMessageId: { type: String, trim: true },
     direction: { type: String, enum: ["inbound", "outbound"], required: true },
     type: { type: String, required: true, trim: true },
@@ -65,4 +66,6 @@ const WhatsAppMessageSchema = new mongoose_1.Schema({
     sentByName: { type: String, trim: true },
 }, { timestamps: true });
 WhatsAppMessageSchema.index({ conversationId: 1, providerTimestamp: 1, createdAt: 1 });
+WhatsAppMessageSchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "whatsapp_message", audit: false });
+WhatsAppMessageSchema.index({ providerMessageId: 1 }, { unique: true, partialFilterExpression: { isDeleted: false }, name: "active_whatsapp_provider_message_unique" });
 exports.default = mongoose_1.default.model("WhatsAppMessage", WhatsAppMessageSchema);

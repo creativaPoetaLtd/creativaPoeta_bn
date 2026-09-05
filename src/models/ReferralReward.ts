@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema, Types } from "mongoose";
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
 
 export type ReferralRewardStatus = "waiting_client_payment" | "earned" | "approved" | "scheduled" | "paid" | "cancelled";
 
@@ -23,7 +24,7 @@ export interface IReferralReward extends Document {
 
 const ReferralRewardSchema = new Schema<IReferralReward>(
   {
-    lead: { type: Schema.Types.ObjectId, ref: "ReferralLead", required: true, unique: true },
+    lead: { type: Schema.Types.ObjectId, ref: "ReferralLead", required: true },
     partner: { type: Schema.Types.ObjectId, ref: "ReferralPartner", required: true },
     partnerId: { type: String, required: true, trim: true, uppercase: true },
     currency: { type: String, trim: true, uppercase: true, default: "EUR" },
@@ -48,5 +49,10 @@ const ReferralRewardSchema = new Schema<IReferralReward>(
 
 ReferralRewardSchema.index({ status: 1, createdAt: -1 });
 ReferralRewardSchema.index({ partner: 1, createdAt: -1 });
+ReferralRewardSchema.plugin(softDeletePlugin, { entityType: "referral_reward" });
+ReferralRewardSchema.index(
+  { lead: 1 },
+  { unique: true, partialFilterExpression: { isDeleted: false }, name: "active_referral_reward_lead_unique" }
+);
 
 export default mongoose.model<IReferralReward>("ReferralReward", ReferralRewardSchema);

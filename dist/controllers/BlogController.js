@@ -11,10 +11,18 @@ const cloudinary_1 = require("../utils/cloudinary");
 const frontendBuildService_1 = require("../services/frontendBuildService");
 const blogRelatedService_1 = require("../services/blogRelatedService");
 const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
+const trashService_1 = require("../services/trashService");
 const emailTemplate_1 = require("../utils/emailTemplate");
 const blogGenerationService_1 = require("../services/blogGenerationService");
 const LANGUAGES = new Set(["fr", "en", "nl", "kiny"]);
 const STATUSES = new Set(["draft", "published", "archived"]);
+const hideDeletedComments = (blog) => {
+    const value = typeof (blog === null || blog === void 0 ? void 0 : blog.toObject) === "function" ? blog.toObject() : { ...blog };
+    if (Array.isArray(value.comments)) {
+        value.comments = value.comments.filter((comment) => (comment === null || comment === void 0 ? void 0 : comment.isDeleted) !== true);
+    }
+    return value;
+};
 const slugify = (value) => value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -322,7 +330,7 @@ const fetchBlogs = async (req, res, next) => {
             Blog_1.default.distinct("category", publicFilter(language)),
         ]);
         res.status(200).json({
-            blogs,
+            blogs: blogs.map(hideDeletedComments),
             categories: categories.filter(Boolean).sort(),
             pagination: {
                 page,
@@ -342,7 +350,7 @@ const fetchAdminBlogs = async (req, res, next) => {
         const blogs = await Blog_1.default.find()
             .populate("author", "name email")
             .sort({ updatedAt: -1 });
-        res.status(200).json({ blogs });
+        res.status(200).json({ blogs: blogs.map(hideDeletedComments) });
     }
     catch (error) {
         next(error);
@@ -377,7 +385,7 @@ const getSingleBlog = async (req, res, next) => {
             }).select("title slug language")
             : [];
         const relatedArticles = await (0, blogRelatedService_1.findRelatedBlogs)(blog.toObject(), 3);
-        res.status(200).json({ blog, translations, relatedArticles });
+        res.status(200).json({ blog: hideDeletedComments(blog), translations, relatedArticles });
     }
     catch (error) {
         next(error);
@@ -439,11 +447,17 @@ const updateBlog = async (req, res, next) => {
 exports.updateBlog = updateBlog;
 const deleteBlog = async (req, res, next) => {
     try {
-        const deleted = await Blog_1.default.findByIdAndDelete(req.params.id);
+        const deleted = await Blog_1.default.findById(req.params.id);
         if (!deleted) {
             res.status(404).json({ message: "Blog not found" });
             return;
         }
+        await (0, trashService_1.moveDocumentToTrash)({
+            entityType: "blog",
+            document: deleted,
+            label: `${deleted.title || "Blog"} · ${deleted.slug || deleted._id}`,
+            req,
+        });
         const seoRebuild = (deleted.status || "published") === "published"
             ? await (0, frontendBuildService_1.triggerFrontendBuild)(`article deleted: ${deleted.slug || deleted.id}`)
             : undefined;
@@ -507,7 +521,7 @@ const addComment = async (req, res, next) => {
       `);
         res.status(201).json({
             message: "Comment added successfully",
-            totalComments: blog.comments.length,
+            totalComments: blog.comments.filter((comment) => comment.isDeleted !== true).length,
             emailSent,
         });
     }
@@ -523,10 +537,8 @@ const getComments = async (req, res, next) => {
             res.status(404).json({ message: "Blog not found" });
             return;
         }
-        res.status(200).json({
-            comments: blog.comments,
-            totalComments: blog.comments.length,
-        });
+        const comments = blog.comments.filter((comment) => comment.isDeleted !== true);
+        res.status(200).json({ comments, totalComments: comments.length });
     }
     catch (error) {
         next(error);
@@ -545,8 +557,14 @@ const deleteComment = async (req, res, next) => {
             res.status(404).json({ message: "Comment not found" });
             return;
         }
-        blog.comments.splice(index, 1);
-        await blog.save();
+        const comment = blog.comments[index];
+        await (0, trashService_1.moveSnapshotToTrash)({
+            entityType: "blog_comment",
+            originalId: String(comment._id),
+            label: `${comment.name || "Blog comment"} · ${blog.title}`,
+            snapshot: { blogId: blog._id, comment: (0, trashService_1.snapshotForTrash)(comment) },
+            req,
+        });
         res.status(200).json({ message: "Comment deleted" });
     }
     catch (error) {

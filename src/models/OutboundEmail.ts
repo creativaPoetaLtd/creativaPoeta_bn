@@ -1,5 +1,7 @@
 ﻿import mongoose, { Document, Schema } from "mongoose";
 
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
+
 export type OutboundEmailFolder = "sent" | "draft";
 export type OutboundEmailStatus = "draft" | "sent" | "failed";
 
@@ -56,6 +58,7 @@ const OutboundEmailSchema: Schema = new Schema(
   { timestamps: true }
 );
 
+OutboundEmailSchema.plugin(softDeletePlugin, { entityType: "outbound_email" });
 OutboundEmailSchema.index({ folder: 1, updatedAt: -1 });
 OutboundEmailSchema.index({ status: 1, updatedAt: -1 });
 OutboundEmailSchema.index({ createdByEmail: 1, folder: 1, updatedAt: -1 });

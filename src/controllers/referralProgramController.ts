@@ -11,6 +11,7 @@ import {
 } from "../services/referralPartnerNotificationService";
 import { sendAdminNotificationEmail as sendAdminNotice } from "../utils/adminNotificationEmail";
 import { normalizeCommunicationLocale } from "../utils/communicationLocale";
+import { moveDocumentToTrash } from "../services/trashService";
 
 const TERMS_VERSION = "2026-08-11";
 const FRONTEND_URL = (process.env.FRONTEND_URL || "https://creativapoeta.com").replace(/\/$/, "");
@@ -1092,7 +1093,7 @@ export const updateReferralPartner = async (req: Request, res: Response): Promis
 
 export const deleteReferralPartner = async (req: Request, res: Response): Promise<void> => {
   try {
-    const partner = await ReferralPartner.findById(req.params.id).select("_id name partnerId");
+    const partner = await ReferralPartner.findById(req.params.id).select("+accessSecretHash +referralCode");
     if (!partner) {
       res.status(404).json({ message: "Referral partner application not found." });
       return;
@@ -1105,7 +1106,12 @@ export const deleteReferralPartner = async (req: Request, res: Response): Promis
       res.status(409).json({ message: "This application cannot be deleted because client introductions or reward records are linked to it. Set its status to closed instead." });
       return;
     }
-    await partner.deleteOne();
+    await moveDocumentToTrash({
+      entityType: "referral_partner",
+      document: partner,
+      label: `${partner.name || "Referral partner"} · ${partner.email || partner.phone || partner.partnerId || partner._id}`,
+      req,
+    });
     res.status(200).json({ message: "Referral partner application deleted." });
   } catch {
     res.status(500).json({ message: "Failed to delete referral partner application." });
@@ -1201,7 +1207,7 @@ export const updateReferralLead = async (req: Request, res: Response): Promise<v
 
 export const deleteReferralLead = async (req: Request, res: Response): Promise<void> => {
   try {
-    const lead = await ReferralLead.findById(req.params.id).select("_id companyName contactName");
+    const lead = await ReferralLead.findById(req.params.id);
     if (!lead) {
       res.status(404).json({ message: "Referral lead not found." });
       return;
@@ -1210,7 +1216,12 @@ export const deleteReferralLead = async (req: Request, res: Response): Promise<v
       res.status(409).json({ message: "This client introduction cannot be deleted because a reward record is linked to it. Keep it for financial traceability." });
       return;
     }
-    await lead.deleteOne();
+    await moveDocumentToTrash({
+      entityType: "referral_lead",
+      document: lead,
+      label: `${lead.companyName || lead.contactName || "Client introduction"} · ${lead.contactEmail || lead.contactPhone || lead._id}`,
+      req,
+    });
     res.status(200).json({ message: "Client introduction deleted." });
   } catch {
     res.status(500).json({ message: "Failed to delete client introduction." });

@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
 
 export type PartnershipRequestStatus = "pending" | "in_progress" | "replied" | "closed";
 
@@ -64,6 +65,8 @@ const PartnershipRequestSchema = new Schema<IPartnershipRequest>(
   },
   { timestamps: true }
 );
+
+PartnershipRequestSchema.plugin(softDeletePlugin, { entityType: "partnership_request" });
 
 PartnershipRequestSchema.index({ status: 1, createdAt: -1 });
 PartnershipRequestSchema.index({ assignedToEmail: 1, createdAt: -1 });

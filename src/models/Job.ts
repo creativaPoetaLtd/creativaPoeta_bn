@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from "mongoose";
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
 
 export type JobType = 'fulltime' | 'parttime' | 'internship' | 'contract';
 export type JobStatus = 'draft' | 'published' | 'closed';
@@ -77,5 +78,6 @@ const JobSchema = new Schema({
 });
 
 JobSchema.index({ status: 1, createdAt: -1 });
+JobSchema.plugin(softDeletePlugin, { entityType: "job" });
 
 export default mongoose.model<IJobDocument>("Job", JobSchema);

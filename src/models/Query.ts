@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from "mongoose";
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
 
 export interface IQuery extends Document {
   name: string;
@@ -58,6 +59,8 @@ const QuerySchema: Schema = new Schema(
   },
   { timestamps: true }
 );
+
+QuerySchema.plugin(softDeletePlugin, { entityType: "contact_query" });
 
 QuerySchema.index({ assignedToEmail: 1, createdAt: -1 });
 

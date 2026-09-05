@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const PartnershipRequestSchema = new mongoose_1.Schema({
     name: { type: String, required: true, trim: true },
     company: { type: String, trim: true },
@@ -67,6 +68,7 @@ const PartnershipRequestSchema = new mongoose_1.Schema({
         },
     ],
 }, { timestamps: true });
+PartnershipRequestSchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "partnership_request" });
 PartnershipRequestSchema.index({ status: 1, createdAt: -1 });
 PartnershipRequestSchema.index({ assignedToEmail: 1, createdAt: -1 });
 exports.default = mongoose_1.default.model("PartnershipRequest", PartnershipRequestSchema);

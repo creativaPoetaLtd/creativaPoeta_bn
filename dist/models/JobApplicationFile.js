@@ -34,11 +34,14 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const JobApplicationFileSchema = new mongoose_1.Schema({
-    application: { type: mongoose_1.Schema.Types.ObjectId, ref: "JobApplication", required: true, unique: true, index: true },
+    application: { type: mongoose_1.Schema.Types.ObjectId, ref: "JobApplication", required: true, index: true },
     originalName: { type: String, required: true, trim: true, maxlength: 240 },
     mimeType: { type: String, required: true, trim: true, maxlength: 160 },
     size: { type: Number, required: true, min: 1, max: 4 * 1024 * 1024 },
     data: { type: Buffer, required: true },
 }, { timestamps: true });
+JobApplicationFileSchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "job_application_file", audit: false });
+JobApplicationFileSchema.index({ application: 1 }, { unique: true, partialFilterExpression: { isDeleted: false }, name: "active_job_application_file_unique" });
 exports.default = mongoose_1.default.model("JobApplicationFile", JobApplicationFileSchema);

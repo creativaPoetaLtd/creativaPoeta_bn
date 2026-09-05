@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const ProjectRequestSchema = new mongoose_1.Schema({
     // Personal Information
     name: { type: String, required: true, trim: true },
@@ -75,5 +76,6 @@ const ProjectRequestSchema = new mongoose_1.Schema({
         },
     ],
 }, { timestamps: true });
+ProjectRequestSchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "project_request" });
 ProjectRequestSchema.index({ assignedToEmail: 1, createdAt: -1 });
 exports.default = mongoose_1.default.model("ProjectRequest", ProjectRequestSchema);

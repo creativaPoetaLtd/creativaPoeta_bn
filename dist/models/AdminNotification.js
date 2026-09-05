@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const AdminNotificationSchema = new mongoose_1.Schema({
     type: {
         type: String,
@@ -58,4 +59,5 @@ const AdminNotificationSchema = new mongoose_1.Schema({
     resolvedAt: { type: Date },
 }, { timestamps: true });
 AdminNotificationSchema.index({ type: 1, status: 1, createdAt: -1 });
+AdminNotificationSchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "admin_notification" });
 exports.default = mongoose_1.default.model("AdminNotification", AdminNotificationSchema);

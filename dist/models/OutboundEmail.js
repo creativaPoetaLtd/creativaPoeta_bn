@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const OutboundEmailSchema = new mongoose_1.Schema({
     folder: { type: String, enum: ["sent", "draft"], required: true, default: "draft" },
     status: { type: String, enum: ["draft", "sent", "failed"], required: true, default: "draft" },
@@ -58,6 +59,7 @@ const OutboundEmailSchema = new mongoose_1.Schema({
     createdByEmail: { type: String, trim: true, lowercase: true },
     updatedByEmail: { type: String, trim: true, lowercase: true },
 }, { timestamps: true });
+OutboundEmailSchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "outbound_email" });
 OutboundEmailSchema.index({ folder: 1, updatedAt: -1 });
 OutboundEmailSchema.index({ status: 1, updatedAt: -1 });
 OutboundEmailSchema.index({ createdByEmail: 1, folder: 1, updatedAt: -1 });

@@ -34,9 +34,10 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const ReferralPartnerSchema = new mongoose_1.Schema({
-    partnerId: { type: String, trim: true, uppercase: true, unique: true, sparse: true },
-    referralCode: { type: String, trim: true, unique: true, sparse: true, select: false },
+    partnerId: { type: String, trim: true, uppercase: true },
+    referralCode: { type: String, trim: true, select: false },
     name: { type: String, required: true, trim: true },
     email: { type: String, trim: true, lowercase: true },
     phone: { type: String, trim: true },
@@ -86,6 +87,9 @@ const ReferralPartnerSchema = new mongoose_1.Schema({
         },
     },
 });
+ReferralPartnerSchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "referral_partner" });
+ReferralPartnerSchema.index({ partnerId: 1 }, { unique: true, partialFilterExpression: { partnerId: { $type: "string" }, isDeleted: false }, name: "active_referral_partner_id_unique" });
+ReferralPartnerSchema.index({ referralCode: 1 }, { unique: true, partialFilterExpression: { referralCode: { $type: "string" }, isDeleted: false }, name: "active_referral_code_unique" });
 ReferralPartnerSchema.index({ email: 1, status: 1 });
 ReferralPartnerSchema.index({ phone: 1, status: 1 });
 ReferralPartnerSchema.index({ status: 1, createdAt: -1 });

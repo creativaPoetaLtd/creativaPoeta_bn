@@ -4,11 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "tsc && node --test dist/tests/*.test.js",
+    "test": "tsc && node scripts/run-backend-tests.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "dev:local": "ts-node-dev --respawn --transpile-only src/localServer.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "migrate:soft-delete": "ts-node src/scripts/migrateSoftDelete.ts",
+    "security:verify-runtime": "ts-node src/scripts/verifyRuntimePrivileges.ts"
   },
   "keywords": [],
   "author": "",
@@ -28,6 +30,8 @@
     "mongoose": "^8.9.5",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^9.0.5",
+    "otplib": "^13.5.0",
+    "qrcode": "^1.5.4",
     "streamifier": "^0.1.1"
   },
   "devDependencies": {
@@ -37,6 +41,7 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^22.10.7",
     "@types/nodemailer": "^6.4.17",
+    "@types/qrcode": "^1.5.5",
     "@types/streamifier": "^0.1.2",
     "nodemon": "^3.1.9",
     "ts-node": "^10.9.2",

@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema, Types } from "mongoose";
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
 
 export type WhatsAppMessageDirection = "inbound" | "outbound";
 export type WhatsAppMessageStatus =
@@ -40,7 +41,7 @@ const WhatsAppMessageSchema = new Schema<IWhatsAppMessage>(
       required: true,
       index: true,
     },
-    providerMessageId: { type: String, required: true, unique: true, index: true },
+    providerMessageId: { type: String, required: true },
     contextMessageId: { type: String, trim: true },
     direction: { type: String, enum: ["inbound", "outbound"], required: true },
     type: { type: String, required: true, trim: true },
@@ -67,5 +68,10 @@ const WhatsAppMessageSchema = new Schema<IWhatsAppMessage>(
 );
 
 WhatsAppMessageSchema.index({ conversationId: 1, providerTimestamp: 1, createdAt: 1 });
+WhatsAppMessageSchema.plugin(softDeletePlugin, { entityType: "whatsapp_message", audit: false });
+WhatsAppMessageSchema.index(
+  { providerMessageId: 1 },
+  { unique: true, partialFilterExpression: { isDeleted: false }, name: "active_whatsapp_provider_message_unique" }
+);
 
 export default mongoose.model<IWhatsAppMessage>("WhatsAppMessage", WhatsAppMessageSchema);

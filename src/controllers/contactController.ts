@@ -7,6 +7,7 @@ import {
   getContactReplySubject,
   normalizeCommunicationLocale,
 } from "../utils/communicationLocale";
+import { moveDocumentToTrash } from "../services/trashService";
 
 const getAdminEmail = (req: Request) => String((req.user as any)?.email || "").toLowerCase().trim();
 const getAdminName = (req: Request) => String((req.user as any)?.name || (req.user as any)?.email || "Admin").trim();
@@ -316,11 +317,18 @@ export const deleteQuery = async (
   try {
     const { id } = req.params;
 
-    const query = await Query.findByIdAndDelete(id);
+    const query = await Query.findById(id);
     if (!query) {
       res.status(404).json({ message: "Query not found" });
       return;
     }
+
+    await moveDocumentToTrash({
+      entityType: "contact_query",
+      document: query,
+      label: `${query.name || "Contact message"} · ${query.email || query._id}`,
+      req,
+    });
 
     res.status(200).json({
       message: "Query deleted successfully",

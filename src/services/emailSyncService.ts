@@ -131,11 +131,11 @@ const shouldSyncFolder = (folder: ListResponse) => {
   return !excludedFolderNames.test(normalizeFolderName(folder.path));
 };
 
-let emailIndexesReady: Promise<void> | undefined;
+let emailSourceDataReady: Promise<void> | undefined;
 
-const ensureEmailSourceIndexes = async () => {
-  if (!emailIndexesReady) {
-    emailIndexesReady = (async () => {
+const ensureEmailSourceData = async () => {
+  if (!emailSourceDataReady) {
+    emailSourceDataReady = (async () => {
       await EmailMessage.updateMany(
         { $or: [{ sourceFolder: { $exists: false } }, { sourceFolder: "" }] },
         { $set: { sourceFolder: "INBOX" } }
@@ -144,25 +144,10 @@ const ensureEmailSourceIndexes = async () => {
         { folder: "dmarc" },
         { $set: { folder: SPAM_FOLDER, status: "read" } }
       );
-
-      const indexes = await EmailMessage.collection.indexes();
-      const legacyUidIndex = indexes.find((index: any) => {
-        const keys = Object.keys(index.key || {});
-        return index.unique && keys.length === 2 && index.key.mailbox === 1 && index.key.uid === 1;
-      });
-
-      if (legacyUidIndex?.name) {
-        await EmailMessage.collection.dropIndex(legacyUidIndex.name);
-      }
-
-      await EmailMessage.collection.createIndex(
-        { mailbox: 1, sourceFolder: 1, uid: 1 },
-        { unique: true, sparse: true, name: "mailbox_sourceFolder_uid_unique" }
-      );
     })();
   }
 
-  return emailIndexesReady;
+  return emailSourceDataReady;
 };
 
 const syncFolder = async (
@@ -234,9 +219,15 @@ const syncFolder = async (
           { sourceFolder: folder.path, uid: message.uid },
           { messageId },
         ],
-      });
+      }).setOptions({ includeDeleted: true });
 
       if (existing) {
+        // A message intentionally removed from CP Mail must not reappear on
+        // the next IMAP synchronization while it still exists upstream.
+        if ((existing as any).isDeleted === true) {
+          result.skipped += 1;
+          continue;
+        }
         // Once imported, CP Mail owns the workflow status. IMAP flags are
         // mirrored separately and must never undo an admin's choice.
         existing.set({ ...payload, status: existing.status });
@@ -364,7 +355,7 @@ export const setMessageSeenOnServer = async (message: {
 };
 
 export const syncConfiguredMailboxes = async (limit = 50): Promise<EmailSyncResult> => {
-  await ensureEmailSourceIndexes();
+  await ensureEmailSourceData();
   const configs = getMailboxConfigs();
   const configuredKeys = new Set(configs.map((config) => config.key));
   const missing: SyncMailboxResult[] = ["be", "global"]

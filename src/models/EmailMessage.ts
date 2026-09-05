@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
 
 export type EmailMessageStatus = "new" | "read" | "replied" | "archived";
 export type EmailMessageFolder = "inbox" | "spam";
@@ -93,9 +94,20 @@ const EmailMessageSchema: Schema = new Schema(
   { timestamps: true }
 );
 
+EmailMessageSchema.plugin(softDeletePlugin, { entityType: "inbound_email", audit: false });
+
 EmailMessageSchema.index(
   { mailbox: 1, sourceFolder: 1, uid: 1 },
-  { unique: true, sparse: true, name: "mailbox_sourceFolder_uid_unique" }
+  {
+    unique: true,
+    partialFilterExpression: {
+      mailbox: { $type: "string" },
+      sourceFolder: { $type: "string" },
+      uid: { $type: "number" },
+      isDeleted: false,
+    },
+    name: "active_mailbox_sourceFolder_uid_unique",
+  }
 );
 EmailMessageSchema.index({ mailbox: 1, messageId: 1 }, { sparse: true });
 EmailMessageSchema.index({ status: 1, receivedAt: -1 });

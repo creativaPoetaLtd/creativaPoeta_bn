@@ -34,11 +34,17 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const CommentSchema = new mongoose_1.Schema({
     name: { type: String, required: true, trim: true, minlength: 2, maxlength: 100 },
     email: { type: String, required: true, trim: true, lowercase: true },
     text: { type: String, required: true, trim: true, minlength: 5, maxlength: 1000 },
     createdAt: { type: Date, default: Date.now },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
+    deletedById: { type: String, trim: true },
+    deletedByEmail: { type: String, trim: true, lowercase: true },
+    deletedByName: { type: String, trim: true },
 }, { _id: true });
 const BlogSchema = new mongoose_1.Schema({
     title: { type: String, required: true, trim: true, maxlength: 180 },
@@ -90,12 +96,15 @@ const BlogSchema = new mongoose_1.Schema({
     },
     comments: [CommentSchema],
 }, { timestamps: true });
+BlogSchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "blog" });
 BlogSchema.index({ slug: 1, language: 1 }, {
     unique: true,
     partialFilterExpression: {
         slug: { $type: "string" },
         language: { $type: "string" },
+        isDeleted: false,
     },
+    name: "active_blog_slug_language_unique",
 });
 BlogSchema.index({ status: 1, language: 1, publishedAt: -1 });
 BlogSchema.index({ category: 1, language: 1 });

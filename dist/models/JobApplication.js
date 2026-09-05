@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const JobApplicationSchema = new mongoose_1.Schema({
     kind: { type: String, enum: ["job", "spontaneous"], default: "spontaneous", index: true },
     job: { type: mongoose_1.Schema.Types.ObjectId, ref: "Job", index: true },
@@ -60,6 +61,7 @@ const JobApplicationSchema = new mongoose_1.Schema({
     reviewedByEmail: { type: String, trim: true, lowercase: true },
     reviewedAt: { type: Date },
 }, { timestamps: true });
+JobApplicationSchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "job_application" });
 JobApplicationSchema.index({ status: 1, createdAt: -1 });
 JobApplicationSchema.index({ email: 1, createdAt: -1 });
 exports.default = mongoose_1.default.model("JobApplication", JobApplicationSchema);

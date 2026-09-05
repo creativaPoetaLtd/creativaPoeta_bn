@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
 
 export type JobApplicationKind = "job" | "spontaneous";
 export type JobApplicationStatus = "new" | "reviewing" | "shortlisted" | "rejected" | "archived";
@@ -61,6 +62,8 @@ const JobApplicationSchema = new Schema<IJobApplication>(
   },
   { timestamps: true }
 );
+
+JobApplicationSchema.plugin(softDeletePlugin, { entityType: "job_application" });
 
 JobApplicationSchema.index({ status: 1, createdAt: -1 });
 JobApplicationSchema.index({ email: 1, createdAt: -1 });

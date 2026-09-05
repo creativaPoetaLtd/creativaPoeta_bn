@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const QuerySchema = new mongoose_1.Schema({
     name: { type: String, required: true },
     email: { type: String, required: true },
@@ -65,5 +66,6 @@ const QuerySchema = new mongoose_1.Schema({
         },
     ],
 }, { timestamps: true });
+QuerySchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "contact_query" });
 QuerySchema.index({ assignedToEmail: 1, createdAt: -1 });
 exports.default = mongoose_1.default.model("Query", QuerySchema);

@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
 
 export type ReferralPartnerProgram = "referral" | "business";
 export type ReferralPartnerStatus = "pending" | "approved" | "active" | "rejected" | "suspended" | "closed";
@@ -56,8 +57,8 @@ export interface IReferralPartner extends Document {
 
 const ReferralPartnerSchema = new Schema<IReferralPartner>(
   {
-    partnerId: { type: String, trim: true, uppercase: true, unique: true, sparse: true },
-    referralCode: { type: String, trim: true, unique: true, sparse: true, select: false },
+    partnerId: { type: String, trim: true, uppercase: true },
+    referralCode: { type: String, trim: true, select: false },
     name: { type: String, required: true, trim: true },
     email: { type: String, trim: true, lowercase: true },
     phone: { type: String, trim: true },
@@ -108,6 +109,16 @@ const ReferralPartnerSchema = new Schema<IReferralPartner>(
       },
     },
   }
+);
+
+ReferralPartnerSchema.plugin(softDeletePlugin, { entityType: "referral_partner" });
+ReferralPartnerSchema.index(
+  { partnerId: 1 },
+  { unique: true, partialFilterExpression: { partnerId: { $type: "string" }, isDeleted: false }, name: "active_referral_partner_id_unique" }
+);
+ReferralPartnerSchema.index(
+  { referralCode: 1 },
+  { unique: true, partialFilterExpression: { referralCode: { $type: "string" }, isDeleted: false }, name: "active_referral_code_unique" }
 );
 
 ReferralPartnerSchema.index({ email: 1, status: 1 });

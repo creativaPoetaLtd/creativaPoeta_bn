@@ -1,6 +1,8 @@
 import jwt from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
+import User from "../models/User";
+import { setAuditActor } from "./auditContext";
 dotenv.config();
 
 const JWT_SECRET = process.env.JWT_SECRET as string;
@@ -26,6 +28,8 @@ interface AuthTokenPayload {
   email: string;
   role: AdminRole;
   isActive?: boolean;
+  mfaVerified?: boolean;
+  authVersion?: number;
 }
 
 const legacyRoleMap: Record<string, AdminRole> = {
@@ -61,11 +65,11 @@ declare module "express-serve-static-core" {
   }
 }
 
-export const authenticateUser = (
+export const authenticateUser = async (
   req: Request,
   res: Response,
   next: NextFunction
-): void => {
+): Promise<void> => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -90,12 +94,51 @@ export const authenticateUser = (
     }
     const decoded = jwt.verify(token, JWT_SECRET) as AuthTokenPayload;
 
-    if (decoded.isActive === false) {
+    const currentUser = await User.findById(decoded._id)
+      .select("name email role isActive accountStatus mfaEnabled authVersion")
+      .lean();
+
+    if (!currentUser) {
+      res.status(401).json({ message: "Account no longer exists. Please log in again." });
+      return;
+    }
+
+    if (!currentUser.isActive || currentUser.accountStatus !== "active") {
       res.status(403).json({ message: "Account is disabled." });
       return;
     }
 
-    req.user = { ...decoded, role: getEffectiveAdminRole(decoded.role, decoded.email) };
+    const effectiveRole = getEffectiveAdminRole(currentUser.role, currentUser.email);
+    if (effectiveRole === "super_admin") {
+      if (!currentUser.mfaEnabled) {
+        res.status(401).json({
+          code: "MFA_ENROLLMENT_REQUIRED",
+          message: "Multi-factor authentication must be configured.",
+        });
+        return;
+      }
+      if (
+        decoded.mfaVerified !== true ||
+        decoded.authVersion !== (currentUser.authVersion || 0)
+      ) {
+        res.status(401).json({
+          code: "MFA_REQUIRED",
+          message: "Multi-factor authentication is required.",
+        });
+        return;
+      }
+    }
+
+    req.user = {
+      ...decoded,
+      _id: String(currentUser._id),
+      name: currentUser.name,
+      email: currentUser.email,
+      role: effectiveRole,
+      isActive: currentUser.isActive,
+      accountStatus: currentUser.accountStatus,
+    };
+    setAuditActor({ id: req.user._id, email: req.user.email, name: req.user.name, role: req.user.role });
     next();
   } catch (err: any) {
     console.warn("Admin token verification failed:", err?.name || "unknown_error");

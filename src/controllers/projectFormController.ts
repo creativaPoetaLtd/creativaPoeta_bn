@@ -5,11 +5,62 @@ import { formatParagraphs } from "../utils/emailTemplate";
 import ProjectRequest from "../models/ProjectDescription";
 import dotenv from "dotenv";
 import { normalizeCommunicationLocale } from "../utils/communicationLocale";
+import { moveDocumentToTrash } from "../services/trashService";
 
 dotenv.config();
 
 export const renderProjectReplyContent = (replyMessage: string) =>
   formatParagraphs(String(replyMessage || "").trim());
+
+export const getImpactAcknowledgement = (locale: unknown) => {
+  const normalizedLocale = normalizeCommunicationLocale(locale);
+  const language = normalizedLocale === "fr" || normalizedLocale === "nl" ? normalizedLocale : "en";
+  const messages = {
+    fr: {
+      subject: "Votre candidature Creativa Poeta Impact est bien arrivée",
+      preheader: "Nous avons bien reçu votre projet et allons l'étudier.",
+      signature: "L'équipe Creativa Poeta Impact",
+      content: `
+        <p style="margin:0 0 14px;">Bonjour,</p>
+        <p style="margin:0 0 14px;">Merci de nous avoir présenté votre organisation et sa mission. Votre candidature au programme <strong>Creativa Poeta Impact — Une Pierre de Plus</strong> est bien enregistrée.</p>
+        <div style="margin:20px 0;padding:16px 18px;border-left:4px solid #EEBA2B;background:#f8faf9;">
+          <strong style="color:#071a33;">Prochaine étape</strong><br>
+          <span>Notre équipe étudie l'impact, le besoin et la faisabilité du projet. Nous vous répondrons, dans la mesure du possible, sous 7 à 14 jours.</span>
+        </div>
+        <p style="margin:0 0 14px;"><strong>Aucun paiement ne sera demandé pour l'examen de cette demande.</strong></p>
+        <p style="margin:0;">Vous pouvez répondre directement à cet email si une précision importante doit être ajoutée.</p>`,
+    },
+    nl: {
+      subject: "Uw aanvraag voor Creativa Poeta Impact is goed aangekomen",
+      preheader: "We hebben uw project ontvangen en zullen het beoordelen.",
+      signature: "Het Creativa Poeta Impact-team",
+      content: `
+        <p style="margin:0 0 14px;">Hallo,</p>
+        <p style="margin:0 0 14px;">Bedankt om uw organisatie en missie voor te stellen. Uw aanvraag voor <strong>Creativa Poeta Impact — Een Steen Erbij</strong> is geregistreerd.</p>
+        <div style="margin:20px 0;padding:16px 18px;border-left:4px solid #EEBA2B;background:#f8faf9;">
+          <strong style="color:#071a33;">Volgende stap</strong><br>
+          <span>Ons team beoordeelt de impact, de behoefte en de haalbaarheid. Waar mogelijk antwoorden we binnen 7 tot 14 dagen.</span>
+        </div>
+        <p style="margin:0 0 14px;"><strong>Voor de beoordeling van deze aanvraag wordt geen betaling gevraagd.</strong></p>
+        <p style="margin:0;">U kunt rechtstreeks op deze e-mail antwoorden als u een belangrijke aanvulling hebt.</p>`,
+    },
+    en: {
+      subject: "Your Creativa Poeta Impact application has arrived",
+      preheader: "We have received your project and will review it.",
+      signature: "The Creativa Poeta Impact team",
+      content: `
+        <p style="margin:0 0 14px;">Hello,</p>
+        <p style="margin:0 0 14px;">Thank you for presenting your organization and mission. Your application to <strong>Creativa Poeta Impact — One More Stone</strong> has been recorded.</p>
+        <div style="margin:20px 0;padding:16px 18px;border-left:4px solid #EEBA2B;background:#f8faf9;">
+          <strong style="color:#071a33;">Next step</strong><br>
+          <span>Our team will review the impact, need and feasibility of the project. Where possible, we will reply within 7 to 14 days.</span>
+        </div>
+        <p style="margin:0 0 14px;"><strong>No payment will be requested to review this application.</strong></p>
+        <p style="margin:0;">You can reply directly to this email if you need to add an important detail.</p>`,
+    },
+  };
+  return messages[language];
+};
 
 const getAdminEmail = (req: Request) => String((req.user as any)?.email || "").toLowerCase().trim();
 const getAdminName = (req: Request) => String((req.user as any)?.name || (req.user as any)?.email || "Admin").trim();
@@ -362,6 +413,27 @@ export const sendProjectInquiry = async (
       htmlContent
     );
 
+    let confirmationSent = false;
+    if (String(serviceType).toLowerCase().includes("creativa poeta impact")) {
+      try {
+        const acknowledgement = getImpactAcknowledgement(locale);
+        await sendEmail(
+          email.trim().toLowerCase(),
+          acknowledgement.subject,
+          acknowledgement.content,
+          {
+            title: acknowledgement.subject,
+            preheader: acknowledgement.preheader,
+            signature: acknowledgement.signature,
+            replyTo: process.env.REPLY_TO_EMAIL || "contact@creativapoeta.com",
+          }
+        );
+        confirmationSent = true;
+      } catch (confirmationError) {
+        console.error("Impact acknowledgement email failed:", confirmationError);
+      }
+    }
+
     res.status(201).json({
       message: `Inquiry saved successfully!${
         emailSent ? " Email notification sent." : " (Email notification failed)"
@@ -369,6 +441,7 @@ export const sendProjectInquiry = async (
       requestId: savedRequest._id,
       status: savedRequest.status,
       emailSent,
+      confirmationSent,
     });
   } catch (error) {
     next(error);
@@ -662,12 +735,19 @@ export const deleteProjectRequest = async (
   try {
     const { id } = req.params;
 
-    const request = await ProjectRequest.findByIdAndDelete(id);
+    const request = await ProjectRequest.findById(id);
 
     if (!request) {
       res.status(404).json({ message: "Project request not found" });
       return;
     }
+
+    await moveDocumentToTrash({
+      entityType: "project_request",
+      document: request,
+      label: `${request.name || "Project request"} · ${request.email || request._id}`,
+      req,
+    });
 
     res.status(200).json({
       message: "Project request deleted successfully",

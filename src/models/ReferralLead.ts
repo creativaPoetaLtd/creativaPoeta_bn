@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema, Types } from "mongoose";
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
 
 export type ReferralLeadStatus = "submitted" | "waiting_for_introduction" | "under_review" | "accepted" | "duplicate" | "rejected" | "contacted" | "qualified" | "proposal_sent" | "won" | "lost";
 
@@ -76,6 +77,8 @@ const ReferralLeadSchema = new Schema<IReferralLead>(
   },
   { timestamps: true }
 );
+
+ReferralLeadSchema.plugin(softDeletePlugin, { entityType: "referral_lead" });
 
 ReferralLeadSchema.index({ status: 1, createdAt: -1 });
 ReferralLeadSchema.index({ partner: 1, createdAt: -1 });

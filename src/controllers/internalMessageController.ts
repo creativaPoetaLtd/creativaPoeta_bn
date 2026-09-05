@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import InternalConversation from "../models/InternalConversation";
 import User from "../models/User";
-import { getEffectiveAdminRole, normalizeAdminRole } from "../middleware/authMiddleware";
+import { getEffectiveAdminRole, isRootAdminEmail, normalizeAdminRole } from "../middleware/authMiddleware";
 
 const normalizeEmail = (email: unknown) => String(email || "").trim().toLowerCase();
 
@@ -105,8 +105,39 @@ const unreadCountFor = (conversation: any, email: string): number =>
     (message: any) => message.senderEmail !== email && !(message.readByEmails || []).includes(email)
   ).length;
 
-const serializeConversation = (conversation: any, email: string, includeMessages = true) => {
-  const messages = conversation.messages || [];
+const hideProtectedIdentity = (value: unknown): string =>
+  isRootAdminEmail(normalizeEmail(value)) ? "" : String(value || "");
+
+const sanitizeProtectedMessageIdentity = (message: any) => {
+  if (!message || !isRootAdminEmail(normalizeEmail(message.senderEmail))) {
+    return {
+      ...message,
+      readByEmails: (message?.readByEmails || []).filter(
+        (readerEmail: unknown) => !isRootAdminEmail(normalizeEmail(readerEmail))
+      ),
+    };
+  }
+
+  return {
+    ...message,
+    senderEmail: "",
+    senderName: "Creativa Poeta",
+    readByEmails: (message.readByEmails || []).filter(
+      (readerEmail: unknown) => !isRootAdminEmail(normalizeEmail(readerEmail))
+    ),
+  };
+};
+
+const serializeConversation = (
+  conversation: any,
+  email: string,
+  includeMessages = true,
+  revealProtectedIdentity = false
+) => {
+  const rawMessages = conversation.messages || [];
+  const messages = revealProtectedIdentity
+    ? rawMessages
+    : rawMessages.map(sanitizeProtectedMessageIdentity);
   const lastMessage = messages.length ? messages[messages.length - 1] : null;
 
   return {
@@ -116,8 +147,14 @@ const serializeConversation = (conversation: any, email: string, includeMessages
     type: conversation.type,
     groupKey: conversation.groupKey,
     groupMeta: conversation.groupKey ? groupMeta(conversation.groupKey) : undefined,
-    participantEmails: conversation.participantEmails || [],
-    createdByEmail: conversation.createdByEmail,
+    participantEmails: revealProtectedIdentity
+      ? conversation.participantEmails || []
+      : (conversation.participantEmails || []).filter(
+          (participantEmail: unknown) => !isRootAdminEmail(normalizeEmail(participantEmail))
+        ),
+    createdByEmail: revealProtectedIdentity
+      ? conversation.createdByEmail
+      : hideProtectedIdentity(conversation.createdByEmail),
     messages: includeMessages ? messages : undefined,
     lastMessage,
     hasMessages: messages.length > 0,
@@ -188,7 +225,12 @@ export const listInternalConversations = async (req: Request, res: Response): Pr
 
     res.status(200).json({
       conversations: conversations.map((conversation) =>
-        serializeConversation(conversation, context.email, true)
+        serializeConversation(
+          conversation,
+          context.email,
+          true,
+          context.role === "super_admin"
+        )
       ),
       groups: context.groups.map(groupMeta),
       users: await getUserDirectory(),
@@ -233,8 +275,18 @@ export const createInternalConversation = async (req: Request, res: Response): P
     const requestedRecipients = Array.from(
       new Set((req.body?.participantEmails || []).map(normalizeEmail).filter(Boolean))
     );
-    const activeRecipients = await User.find({ email: { $in: requestedRecipients }, isActive: true }, "email").lean();
-    const allowedRecipientEmails = activeRecipients.map((user: any) => normalizeEmail(user.email));
+    const activeRecipients = await User.find(
+      { email: { $in: requestedRecipients }, isActive: true },
+      "email role"
+    ).lean();
+    const requesterIsSuperAdmin = getEffectiveAdminRole(req.user?.role, req.user?.email) === "super_admin";
+    const allowedRecipientEmails = activeRecipients
+      .filter(
+        (user: any) =>
+          requesterIsSuperAdmin ||
+          (getEffectiveAdminRole(user.role, user.email) !== "super_admin" && !isRootAdminEmail(user.email))
+      )
+      .map((user: any) => normalizeEmail(user.email));
     const participantEmails = Array.from(new Set([context.email, ...allowedRecipientEmails]));
 
     if (participantEmails.length < 2) {
@@ -264,7 +316,14 @@ export const createInternalConversation = async (req: Request, res: Response): P
       lastMessageAt: body ? new Date() : undefined,
     });
 
-    res.status(201).json({ conversation: serializeConversation(conversation.toObject(), context.email) });
+    res.status(201).json({
+      conversation: serializeConversation(
+        conversation.toObject(),
+        context.email,
+        true,
+        context.role === "super_admin"
+      ),
+    });
   } catch (error) {
     console.error("Failed to create internal conversation", error);
     res.status(500).json({ message: "Unable to create internal conversation." });
@@ -297,7 +356,14 @@ export const sendInternalMessage = async (req: Request, res: Response): Promise<
     conversation.lastMessageAt = new Date();
     await conversation.save();
 
-    res.status(200).json({ conversation: serializeConversation(conversation.toObject(), context.email) });
+    res.status(200).json({
+      conversation: serializeConversation(
+        conversation.toObject(),
+        context.email,
+        true,
+        context.role === "super_admin"
+      ),
+    });
   } catch (error) {
     console.error("Failed to send internal message", error);
     res.status(500).json({ message: "Unable to send internal message." });
@@ -321,7 +387,14 @@ export const markInternalConversationRead = async (req: Request, res: Response):
     });
 
     await conversation.save();
-    res.status(200).json({ conversation: serializeConversation(conversation.toObject(), context.email) });
+    res.status(200).json({
+      conversation: serializeConversation(
+        conversation.toObject(),
+        context.email,
+        true,
+        context.role === "super_admin"
+      ),
+    });
   } catch (error) {
     console.error("Failed to mark internal conversation read", error);
     res.status(500).json({ message: "Unable to update internal conversation." });

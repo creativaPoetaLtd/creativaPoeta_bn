@@ -9,6 +9,7 @@ const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
 const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
 const emailTemplate_1 = require("../utils/emailTemplate");
 const communicationLocale_1 = require("../utils/communicationLocale");
+const trashService_1 = require("../services/trashService");
 const validStatuses = [
     "pending",
     "in_progress",
@@ -259,11 +260,17 @@ const replyToPartnershipRequest = async (req, res) => {
 exports.replyToPartnershipRequest = replyToPartnershipRequest;
 const deletePartnershipRequest = async (req, res) => {
     try {
-        const request = await PartnershipRequest_1.default.findByIdAndDelete(req.params.id);
+        const request = await PartnershipRequest_1.default.findById(req.params.id);
         if (!request) {
             res.status(404).json({ message: "Partnership request not found." });
             return;
         }
+        await (0, trashService_1.moveDocumentToTrash)({
+            entityType: "partnership_request",
+            document: request,
+            label: `${request.name || request.company || "Partnership request"} · ${request.email || request._id}`,
+            req,
+        });
         res.status(200).json({ message: "Partnership request deleted." });
     }
     catch (error) {

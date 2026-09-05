@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from "mongoose";
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
 
 export type UserRole =
   | "super_admin"
@@ -36,6 +37,15 @@ export interface IUser extends Document {
   permissionsAllow: string[];
   permissionsDeny: string[];
   internalGroups: string[];
+  mfaEnabled: boolean;
+  mfaSecretEncrypted?: string;
+  mfaPendingSecretEncrypted?: string;
+  mfaPendingExpiresAt?: Date;
+  mfaRecoveryCodeHashes: string[];
+  mfaFailedAttempts: number;
+  mfaLockedUntil?: Date;
+  mfaEnabledAt?: Date;
+  authVersion: number;
   createdAt: Date;
 }
 
@@ -59,7 +69,7 @@ const MailboxAccessSchema = new Schema(
 const UserSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    email: { type: String, required: true, lowercase: true, trim: true },
     password: { type: String, default: "" },
     role: {
       type: String,
@@ -90,8 +100,23 @@ const UserSchema: Schema = new Schema(
     permissionsAllow: { type: [String], default: [] },
     permissionsDeny: { type: [String], default: [] },
     internalGroups: { type: [String], default: [] },
+    mfaEnabled: { type: Boolean, default: false },
+    mfaSecretEncrypted: { type: String, select: false },
+    mfaPendingSecretEncrypted: { type: String, select: false },
+    mfaPendingExpiresAt: { type: Date, select: false },
+    mfaRecoveryCodeHashes: { type: [String], default: [], select: false },
+    mfaFailedAttempts: { type: Number, default: 0, select: false },
+    mfaLockedUntil: { type: Date, select: false },
+    mfaEnabledAt: { type: Date },
+    authVersion: { type: Number, default: 0 },
   },
   { timestamps: true }
+);
+
+UserSchema.plugin(softDeletePlugin, { entityType: "admin_user" });
+UserSchema.index(
+  { email: 1 },
+  { unique: true, partialFilterExpression: { isDeleted: false }, name: "active_user_email_unique" }
 );
 
 export default mongoose.model<IUser>("User", UserSchema);

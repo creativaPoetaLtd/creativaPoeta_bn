@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const InternalMessageSchema = new mongoose_1.Schema({
     body: { type: String, required: true, trim: true },
     senderEmail: { type: String, required: true, trim: true, lowercase: true },
@@ -52,4 +53,5 @@ const InternalConversationSchema = new mongoose_1.Schema({
 }, { timestamps: true });
 InternalConversationSchema.index({ groupKey: 1 }, { sparse: true });
 InternalConversationSchema.index({ participantEmails: 1, lastMessageAt: -1 });
+InternalConversationSchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "internal_conversation", audit: false });
 exports.default = mongoose_1.default.model("InternalConversation", InternalConversationSchema);

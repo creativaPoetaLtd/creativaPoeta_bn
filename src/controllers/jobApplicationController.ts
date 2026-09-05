@@ -7,6 +7,7 @@ import Job from "../models/Job";
 import JobApplication, { JobApplicationStatus } from "../models/JobApplication";
 import JobApplicationFile from "../models/JobApplicationFile";
 import { consumeReferralRateLimit } from "../services/referralRateLimitService";
+import { moveDocumentToTrash, moveSnapshotToTrash, snapshotForTrash } from "../services/trashService";
 
 
 dotenv.config();
@@ -92,7 +93,7 @@ export const sendJobApplication = async (req: Request, res: Response, next: Next
                     data: req.file.buffer,
                 });
             } catch (fileError) {
-                await JobApplication.findByIdAndDelete(application._id);
+                await moveDocumentToTrash({ entityType: "job_application", document: application as any, req, reason: "CV storage failed during submission" });
                 throw fileError;
             }
         }
@@ -174,13 +175,22 @@ export const updateJobApplication = async (req: Request, res: Response, next: Ne
 
 export const deleteJobApplication = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const application = await JobApplication.findById(req.params.id).select("_id");
+        const application = await JobApplication.findById(req.params.id);
         if (!application) {
             res.status(404).json({ message: "Application not found." });
             return;
         }
-        await JobApplicationFile.deleteOne({ application: application._id });
-        await application.deleteOne();
+        const applicationFile = await JobApplicationFile.findOne({ application: application._id });
+        await moveSnapshotToTrash({
+            entityType: "job_application",
+            originalId: String(application._id),
+            label: `${application.fullName || "Job application"} · ${application.email || application._id}`,
+            snapshot: snapshotForTrash(application),
+            relatedSnapshots: applicationFile
+                ? [{ entityType: "job_application_file", snapshot: snapshotForTrash(applicationFile) }]
+                : [],
+            req,
+        });
         res.status(200).json({ message: "Application deleted." });
     } catch (error) { next(error); }
 };

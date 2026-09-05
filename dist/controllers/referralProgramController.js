@@ -13,6 +13,7 @@ const referralRateLimitService_1 = require("../services/referralRateLimitService
 const referralPartnerNotificationService_1 = require("../services/referralPartnerNotificationService");
 const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
 const communicationLocale_1 = require("../utils/communicationLocale");
+const trashService_1 = require("../services/trashService");
 const TERMS_VERSION = "2026-08-11";
 const FRONTEND_URL = (process.env.FRONTEND_URL || "https://creativapoeta.com").replace(/\/$/, "");
 const partnerStatuses = ["pending", "approved", "active", "rejected", "suspended", "closed"];
@@ -1052,7 +1053,7 @@ const updateReferralPartner = async (req, res) => {
 exports.updateReferralPartner = updateReferralPartner;
 const deleteReferralPartner = async (req, res) => {
     try {
-        const partner = await ReferralPartner_1.default.findById(req.params.id).select("_id name partnerId");
+        const partner = await ReferralPartner_1.default.findById(req.params.id).select("+accessSecretHash +referralCode");
         if (!partner) {
             res.status(404).json({ message: "Referral partner application not found." });
             return;
@@ -1065,7 +1066,12 @@ const deleteReferralPartner = async (req, res) => {
             res.status(409).json({ message: "This application cannot be deleted because client introductions or reward records are linked to it. Set its status to closed instead." });
             return;
         }
-        await partner.deleteOne();
+        await (0, trashService_1.moveDocumentToTrash)({
+            entityType: "referral_partner",
+            document: partner,
+            label: `${partner.name || "Referral partner"} · ${partner.email || partner.phone || partner.partnerId || partner._id}`,
+            req,
+        });
         res.status(200).json({ message: "Referral partner application deleted." });
     }
     catch {
@@ -1169,7 +1175,7 @@ const updateReferralLead = async (req, res) => {
 exports.updateReferralLead = updateReferralLead;
 const deleteReferralLead = async (req, res) => {
     try {
-        const lead = await ReferralLead_1.default.findById(req.params.id).select("_id companyName contactName");
+        const lead = await ReferralLead_1.default.findById(req.params.id);
         if (!lead) {
             res.status(404).json({ message: "Referral lead not found." });
             return;
@@ -1178,7 +1184,12 @@ const deleteReferralLead = async (req, res) => {
             res.status(409).json({ message: "This client introduction cannot be deleted because a reward record is linked to it. Keep it for financial traceability." });
             return;
         }
-        await lead.deleteOne();
+        await (0, trashService_1.moveDocumentToTrash)({
+            entityType: "referral_lead",
+            document: lead,
+            label: `${lead.companyName || lead.contactName || "Client introduction"} · ${lead.contactEmail || lead.contactPhone || lead._id}`,
+            req,
+        });
         res.status(200).json({ message: "Client introduction deleted." });
     }
     catch {

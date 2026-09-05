@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const JobSchema = new mongoose_1.Schema({
     title: {
         type: String,
@@ -86,4 +87,5 @@ const JobSchema = new mongoose_1.Schema({
     timestamps: true
 });
 JobSchema.index({ status: 1, createdAt: -1 });
+JobSchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "job" });
 exports.default = mongoose_1.default.model("Job", JobSchema);

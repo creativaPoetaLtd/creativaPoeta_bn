@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from "mongoose";
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
 
 export interface IProjectRequest extends Document {
   // Personal Information
@@ -83,6 +84,8 @@ const ProjectRequestSchema: Schema = new Schema(
   },
   { timestamps: true }
 );
+
+ProjectRequestSchema.plugin(softDeletePlugin, { entityType: "project_request" });
 
 ProjectRequestSchema.index({ assignedToEmail: 1, createdAt: -1 });
 

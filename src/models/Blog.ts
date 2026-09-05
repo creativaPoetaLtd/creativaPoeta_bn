@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
 
 export type BlogLanguage = "fr" | "en" | "nl" | "kiny";
 export type BlogStatus = "draft" | "published" | "archived";
@@ -9,6 +10,11 @@ export interface IComment {
   email: string;
   text: string;
   createdAt: Date;
+  isDeleted?: boolean;
+  deletedAt?: Date;
+  deletedById?: string;
+  deletedByEmail?: string;
+  deletedByName?: string;
 }
 
 export interface IBlog extends Document {
@@ -54,6 +60,11 @@ const CommentSchema = new Schema<IComment>(
     email: { type: String, required: true, trim: true, lowercase: true },
     text: { type: String, required: true, trim: true, minlength: 5, maxlength: 1000 },
     createdAt: { type: Date, default: Date.now },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
+    deletedById: { type: String, trim: true },
+    deletedByEmail: { type: String, trim: true, lowercase: true },
+    deletedByName: { type: String, trim: true },
   },
   { _id: true }
 );
@@ -112,6 +123,8 @@ const BlogSchema = new Schema<IBlog>(
   { timestamps: true }
 );
 
+BlogSchema.plugin(softDeletePlugin, { entityType: "blog" });
+
 BlogSchema.index(
   { slug: 1, language: 1 },
   {
@@ -119,7 +132,9 @@ BlogSchema.index(
     partialFilterExpression: {
       slug: { $type: "string" },
       language: { $type: "string" },
+      isDeleted: false,
     },
+    name: "active_blog_slug_language_unique",
   }
 );
 BlogSchema.index({ status: 1, language: 1, publishedAt: -1 });

@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
 
 export type WhatsAppConversationStatus =
   | "open"
@@ -54,7 +55,7 @@ const WhatsAppActivitySchema = new Schema<IWhatsAppActivity>(
 
 const WhatsAppConversationSchema = new Schema<IWhatsAppConversation>(
   {
-    conversationKey: { type: String, required: true, unique: true, index: true },
+    conversationKey: { type: String, required: true },
     waId: { type: String, required: true, trim: true, index: true },
     phoneNumberId: { type: String, required: true, trim: true },
     displayPhoneNumber: { type: String, trim: true },
@@ -82,6 +83,11 @@ const WhatsAppConversationSchema = new Schema<IWhatsAppConversation>(
 
 WhatsAppConversationSchema.index({ status: 1, lastMessageAt: -1 });
 WhatsAppConversationSchema.index({ assignedToEmail: 1, status: 1, lastMessageAt: -1 });
+WhatsAppConversationSchema.plugin(softDeletePlugin, { entityType: "whatsapp_conversation", audit: false });
+WhatsAppConversationSchema.index(
+  { conversationKey: 1 },
+  { unique: true, partialFilterExpression: { isDeleted: false }, name: "active_whatsapp_conversation_key_unique" }
+);
 
 export default mongoose.model<IWhatsAppConversation>(
   "WhatsAppConversation",

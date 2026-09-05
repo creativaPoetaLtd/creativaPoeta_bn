@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const EmailMessageSchema = new mongoose_1.Schema({
     mailbox: { type: String, required: true, trim: true },
     mailboxAddress: { type: String, required: true, trim: true, lowercase: true },
@@ -80,7 +81,17 @@ const EmailMessageSchema = new mongoose_1.Schema({
         },
     ],
 }, { timestamps: true });
-EmailMessageSchema.index({ mailbox: 1, sourceFolder: 1, uid: 1 }, { unique: true, sparse: true, name: "mailbox_sourceFolder_uid_unique" });
+EmailMessageSchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "inbound_email", audit: false });
+EmailMessageSchema.index({ mailbox: 1, sourceFolder: 1, uid: 1 }, {
+    unique: true,
+    partialFilterExpression: {
+        mailbox: { $type: "string" },
+        sourceFolder: { $type: "string" },
+        uid: { $type: "number" },
+        isDeleted: false,
+    },
+    name: "active_mailbox_sourceFolder_uid_unique",
+});
 EmailMessageSchema.index({ mailbox: 1, messageId: 1 }, { sparse: true });
 EmailMessageSchema.index({ status: 1, receivedAt: -1 });
 EmailMessageSchema.index({ mailboxAddress: 1, receivedAt: -1 });

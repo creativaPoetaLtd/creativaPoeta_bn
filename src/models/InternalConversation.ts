@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from "mongoose";
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
 
 export type InternalConversationType = "group" | "direct" | "custom";
 
@@ -48,5 +49,6 @@ const InternalConversationSchema = new Schema<IInternalConversation>(
 
 InternalConversationSchema.index({ groupKey: 1 }, { sparse: true });
 InternalConversationSchema.index({ participantEmails: 1, lastMessageAt: -1 });
+InternalConversationSchema.plugin(softDeletePlugin, { entityType: "internal_conversation", audit: false });
 
 export default mongoose.model<IInternalConversation>("InternalConversation", InternalConversationSchema);

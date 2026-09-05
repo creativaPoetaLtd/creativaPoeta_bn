@@ -4,7 +4,18 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import User, { IUser, IUserMailboxAccess } from "../models/User";
 import AdminNotification from "../models/AdminNotification";
-import { getEffectiveAdminRole, normalizeAdminRole } from "../middleware/authMiddleware";
+import { getEffectiveAdminRole, isRootAdminEmail, normalizeAdminRole } from "../middleware/authMiddleware";
+import { TRASH_MANAGE_PERMISSION } from "../middleware/trashAccessMiddleware";
+import { moveDocumentToTrash } from "../services/trashService";
+import {
+  createMfaSetup,
+  decryptMfaSecret,
+  encryptMfaSecret,
+  findRecoveryCodeIndex,
+  generateRecoveryCodes,
+  hashRecoveryCode,
+  verifyMfaCode,
+} from "../security/mfa";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -202,16 +213,16 @@ const getRoleInternalGroups = (role: CreatableAdminRole | "super_admin") => {
   return cpgGroupKeys.filter((groupKey) => getCpgGroupLevels(groupKey).includes(level));
 };
 
-const getEffectivePermissions = (user: IUser, role: CreatableAdminRole | "super_admin") => {
+const getEffectivePermissions = (user: IUser, role: CreatableAdminRole | "super_admin", includeHidden = false) => {
   const base = new Set(permissionsByRole[role] || []);
   (user.permissionsAllow || []).forEach((permission) => {
-    if (permissionCatalog.has(permission)) base.add(permission);
+    if (permissionCatalog.has(permission) || (includeHidden && permission === TRASH_MANAGE_PERMISSION)) base.add(permission);
   });
   (user.permissionsDeny || []).forEach((permission) => base.delete(permission));
   return Array.from(base);
 };
 
-const sanitizeUser = (user: IUser) => {
+const sanitizeUser = (user: IUser, includeHiddenPermissions = false) => {
   const normalizedRole = getEffectiveAdminRole(user.role, user.email);
   const safeRole = normalizedRole === "admin" || normalizedRole === "editor" || normalizedRole === "viewer"
     ? "admin_5"
@@ -223,9 +234,9 @@ const sanitizeUser = (user: IUser) => {
     email: user.email,
     role: safeRole,
     roleLabel: roleLabels[safeRole as keyof typeof roleLabels] || safeRole,
-    permissions: getEffectivePermissions(user, safeRole as CreatableAdminRole | "super_admin"),
-    permissionsAllow: user.permissionsAllow || [],
-    permissionsDeny: user.permissionsDeny || [],
+    permissions: getEffectivePermissions(user, safeRole as CreatableAdminRole | "super_admin", includeHiddenPermissions),
+    permissionsAllow: (user.permissionsAllow || []).filter((permission) => permissionCatalog.has(permission) || (includeHiddenPermissions && permission === TRASH_MANAGE_PERMISSION)),
+    permissionsDeny: (user.permissionsDeny || []).filter((permission) => permissionCatalog.has(permission) || (includeHiddenPermissions && permission === TRASH_MANAGE_PERMISSION)),
     internalGroups: Array.from(new Set([...(user.internalGroups || []), ...getRoleInternalGroups(safeRole as CreatableAdminRole | "super_admin")])).filter((group) => cpgGroupKeys.includes(group)),
     isActive: user.isActive,
     accountStatus: user.accountStatus || (user.password ? "active" : "pending"),
@@ -234,7 +245,19 @@ const sanitizeUser = (user: IUser) => {
   };
 };
 
-const signAdminToken = (user: IUser) => {
+const MFA_CHALLENGE_MINUTES = 10;
+const MFA_SETUP_MINUTES = 10;
+const MFA_MAX_FAILED_ATTEMPTS = 5;
+const MFA_LOCK_MINUTES = 15;
+
+type MfaChallengePayload = {
+  _id: string;
+  scope: "mfa_challenge";
+  purpose: "mfa_setup" | "mfa_verify";
+  authVersion: number;
+};
+
+const signAdminToken = (user: IUser, mfaVerified = false) => {
   const normalizedRole = getEffectiveAdminRole(user.role, user.email);
   return jwt.sign(
     {
@@ -243,10 +266,94 @@ const signAdminToken = (user: IUser) => {
       email: user.email,
       role: normalizedRole,
       isActive: user.isActive,
+      mfaVerified,
+      authVersion: user.authVersion || 0,
     },
     JWT_SECRET,
     { expiresIn: "1d" }
   );
+};
+
+const signMfaChallenge = (user: IUser, purpose: MfaChallengePayload["purpose"]) =>
+  jwt.sign(
+    {
+      _id: String(user._id),
+      scope: "mfa_challenge",
+      purpose,
+      authVersion: user.authVersion || 0,
+    } satisfies MfaChallengePayload,
+    JWT_SECRET,
+    {
+      expiresIn: `${MFA_CHALLENGE_MINUTES}m`,
+      audience: "cp-admin-mfa",
+      issuer: "creativa-poeta-api",
+    }
+  );
+
+const verifyMfaChallenge = (value: unknown, expectedPurpose: MfaChallengePayload["purpose"]) => {
+  const token = String(value || "").trim();
+  if (!token) throw new Error("MFA challenge is missing.");
+  const decoded = jwt.verify(token, JWT_SECRET, {
+    audience: "cp-admin-mfa",
+    issuer: "creativa-poeta-api",
+  }) as MfaChallengePayload;
+  if (decoded.scope !== "mfa_challenge" || decoded.purpose !== expectedPurpose || !decoded._id) {
+    throw new Error("MFA challenge is invalid.");
+  }
+  return decoded;
+};
+
+const respondAfterPrimaryAuth = (res: Response, user: IUser) => {
+  const role = getEffectiveAdminRole(user.role, user.email);
+  if (role !== "super_admin") {
+    res.status(200).json({ token: signAdminToken(user), user: sanitizeUser(user) });
+    return;
+  }
+
+  const mfaSetupRequired = !user.mfaEnabled;
+  res.status(200).json({
+    mfaRequired: true,
+    mfaSetupRequired,
+    challengeToken: signMfaChallenge(user, mfaSetupRequired ? "mfa_setup" : "mfa_verify"),
+  });
+};
+
+const loadMfaUser = async (challenge: MfaChallengePayload) => {
+  const user = await User.findById(challenge._id).select(
+    "+mfaSecretEncrypted +mfaPendingSecretEncrypted +mfaPendingExpiresAt +mfaRecoveryCodeHashes +mfaFailedAttempts +mfaLockedUntil"
+  );
+  if (
+    !user ||
+    !user.isActive ||
+    user.accountStatus !== "active" ||
+    getEffectiveAdminRole(user.role, user.email) !== "super_admin" ||
+    (user.authVersion || 0) !== challenge.authVersion
+  ) {
+    throw new Error("MFA challenge is no longer valid.");
+  }
+  return user;
+};
+
+const assertMfaNotLocked = (user: IUser) => {
+  if (user.mfaLockedUntil && user.mfaLockedUntil.getTime() > Date.now()) {
+    const error = new Error("Too many invalid codes. Try again later.") as Error & { status?: number };
+    error.status = 429;
+    throw error;
+  }
+};
+
+const recordInvalidMfaAttempt = async (user: IUser) => {
+  user.mfaFailedAttempts = (user.mfaFailedAttempts || 0) + 1;
+  if (user.mfaFailedAttempts >= MFA_MAX_FAILED_ATTEMPTS) {
+    user.mfaLockedUntil = new Date(Date.now() + MFA_LOCK_MINUTES * 60_000);
+    user.mfaFailedAttempts = 0;
+  }
+  await user.save();
+};
+
+const resetMfaFailures = (user: IUser) => {
+  user.mfaFailedAttempts = 0;
+  user.mfaLockedUntil = undefined;
 };
 
 const createPlainToken = () => crypto.randomBytes(32).toString("hex");
@@ -377,12 +484,134 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    res.status(200).json({
-      token: signAdminToken(user),
-      user: sanitizeUser(user),
-    });
+    respondAfterPrimaryAuth(res, user);
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+export const startMfaSetup = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const challenge = verifyMfaChallenge(req.body?.challengeToken, "mfa_setup");
+    const user = await loadMfaUser(challenge);
+    assertMfaNotLocked(user);
+
+    if (user.mfaEnabled) {
+      res.status(409).json({ error: "Multi-factor authentication is already enabled." });
+      return;
+    }
+
+    const setup = await createMfaSetup(user.email);
+    user.mfaPendingSecretEncrypted = encryptMfaSecret(setup.secret, String(user._id));
+    user.mfaPendingExpiresAt = new Date(Date.now() + MFA_SETUP_MINUTES * 60_000);
+    await user.save();
+
+    res.status(200).json({
+      setupKey: setup.secret,
+      qrCodeDataUrl: setup.qrCodeDataUrl,
+      expiresAt: user.mfaPendingExpiresAt,
+    });
+  } catch (error) {
+    const status = (error as Error & { status?: number }).status ||
+      ((error as Error).message.includes("MFA_ENCRYPTION_KEY") ? 503 : 401);
+    res.status(status).json({ error: (error as Error).message });
+  }
+};
+
+export const confirmMfaSetup = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const challenge = verifyMfaChallenge(req.body?.challengeToken, "mfa_setup");
+    const user = await loadMfaUser(challenge);
+    assertMfaNotLocked(user);
+
+    if (
+      !user.mfaPendingSecretEncrypted ||
+      !user.mfaPendingExpiresAt ||
+      user.mfaPendingExpiresAt.getTime() < Date.now()
+    ) {
+      res.status(400).json({ error: "MFA setup expired. Start setup again." });
+      return;
+    }
+
+    const secret = decryptMfaSecret(user.mfaPendingSecretEncrypted, String(user._id));
+    if (!(await verifyMfaCode(secret, req.body?.code))) {
+      await recordInvalidMfaAttempt(user);
+      res.status(400).json({ error: "Invalid authentication code." });
+      return;
+    }
+
+    const recoveryCodes = generateRecoveryCodes();
+    user.mfaEnabled = true;
+    user.mfaSecretEncrypted = user.mfaPendingSecretEncrypted;
+    user.mfaPendingSecretEncrypted = undefined;
+    user.mfaPendingExpiresAt = undefined;
+    user.mfaRecoveryCodeHashes = recoveryCodes.map((code) =>
+      hashRecoveryCode(code, String(user._id))
+    );
+    user.mfaEnabledAt = new Date();
+    user.authVersion = (user.authVersion || 0) + 1;
+    resetMfaFailures(user);
+    await user.save();
+
+    res.status(200).json({
+      token: signAdminToken(user, true),
+      user: sanitizeUser(user, true),
+      recoveryCodes,
+    });
+  } catch (error) {
+    const status = (error as Error & { status?: number }).status || 401;
+    res.status(status).json({ error: (error as Error).message });
+  }
+};
+
+export const verifyMfaLogin = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const challenge = verifyMfaChallenge(req.body?.challengeToken, "mfa_verify");
+    const user = await loadMfaUser(challenge);
+    assertMfaNotLocked(user);
+
+    if (!user.mfaEnabled || !user.mfaSecretEncrypted) {
+      res.status(409).json({ error: "Multi-factor authentication must be configured first." });
+      return;
+    }
+
+    let valid = false;
+    let recoveryCodeIndex = -1;
+    if (req.body?.recoveryCode) {
+      recoveryCodeIndex = findRecoveryCodeIndex(
+        user.mfaRecoveryCodeHashes || [],
+        req.body.recoveryCode,
+        String(user._id)
+      );
+      valid = recoveryCodeIndex >= 0;
+    } else {
+      const secret = decryptMfaSecret(user.mfaSecretEncrypted, String(user._id));
+      valid = await verifyMfaCode(secret, req.body?.code);
+    }
+
+    if (!valid) {
+      await recordInvalidMfaAttempt(user);
+      res.status(400).json({ error: "Invalid authentication code." });
+      return;
+    }
+
+    if (recoveryCodeIndex >= 0) {
+      user.mfaRecoveryCodeHashes.splice(recoveryCodeIndex, 1);
+      user.authVersion = (user.authVersion || 0) + 1;
+    }
+    resetMfaFailures(user);
+    await user.save();
+
+    res.status(200).json({
+      token: signAdminToken(user, true),
+      user: sanitizeUser(user, true),
+      recoveryCodeUsed: recoveryCodeIndex >= 0,
+      recoveryCodesRemaining: user.mfaRecoveryCodeHashes.length,
+    });
+  } catch (error) {
+    const status = (error as Error & { status?: number }).status ||
+      ((error as Error).message.includes("MFA_ENCRYPTION_KEY") ? 503 : 401);
+    res.status(status).json({ error: (error as Error).message });
   }
 };
 
@@ -443,9 +672,10 @@ export const activateAccount = async (req: Request, res: Response): Promise<void
     user.accountStatus = "active";
     user.isActive = true;
     user.passwordSetAt = new Date();
+    user.authVersion = (user.authVersion || 0) + 1;
     await user.save();
 
-    res.status(200).json({ token: signAdminToken(user), user: sanitizeUser(user) });
+    respondAfterPrimaryAuth(res, user);
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -475,6 +705,7 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
 
     user.password = await bcrypt.hash(String(password), 12);
     user.passwordSetAt = new Date();
+    user.authVersion = (user.authVersion || 0) + 1;
     await user.save();
 
     res.status(200).json({ message: "Password changed successfully." });
@@ -533,18 +764,37 @@ export const completePasswordReset = async (req: Request, res: Response): Promis
     user.passwordSetAt = new Date();
     user.resetTokenHash = undefined;
     user.resetTokenExpiresAt = undefined;
+    user.authVersion = (user.authVersion || 0) + 1;
     await user.save();
 
-    res.status(200).json({ token: signAdminToken(user), user: sanitizeUser(user) });
+    respondAfterPrimaryAuth(res, user);
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
 };
 
-export const listAdmins = async (_req: Request, res: Response): Promise<void> => {
+export const listAdmins = async (req: Request, res: Response): Promise<void> => {
   try {
     const users = await User.find({}, "-password -resetTokenHash").sort({ createdAt: -1 });
-    res.status(200).json({ users: users.map((user) => sanitizeUser(user)) });
+    const requesterIsSuperAdmin = getEffectiveAdminRole(req.user?.role, req.user?.email) === "super_admin";
+    // The root identity is deliberately absent from every directory response,
+    // including the root administrator's own view. It is an infrastructure
+    // identity, not a team profile.
+    const visibleUsers = users.filter(
+      (user) => getEffectiveAdminRole(user.role, user.email) !== "super_admin" && !isRootAdminEmail(user.email)
+    );
+    res.status(200).json({
+      users: visibleUsers.map((user) => ({
+        ...sanitizeUser(user),
+        ...(requesterIsSuperAdmin
+          ? {
+              protectedArchiveAccess:
+                (user.permissionsAllow || []).includes(TRASH_MANAGE_PERMISSION as any) &&
+                !(user.permissionsDeny || []).includes(TRASH_MANAGE_PERMISSION as any),
+            }
+          : {}),
+      })),
+    });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -636,10 +886,18 @@ export const updateAdmin = async (req: Request, res: Response): Promise<void> =>
       target.mailboxAccess = await sanitizeAssignableMailboxAccess(mailboxAccess, target.email) as any;
     }
     if (permissionsAllow !== undefined) {
-      target.permissionsAllow = sanitizePermissionList(permissionsAllow) as any;
+      const nextPermissions = sanitizePermissionList(permissionsAllow);
+      if ((target.permissionsAllow || []).includes(TRASH_MANAGE_PERMISSION as any)) {
+        nextPermissions.push(TRASH_MANAGE_PERMISSION as any);
+      }
+      target.permissionsAllow = Array.from(new Set(nextPermissions)) as any;
     }
     if (permissionsDeny !== undefined) {
-      target.permissionsDeny = sanitizePermissionList(permissionsDeny) as any;
+      const nextPermissions = sanitizePermissionList(permissionsDeny);
+      if ((target.permissionsDeny || []).includes(TRASH_MANAGE_PERMISSION as any)) {
+        nextPermissions.push(TRASH_MANAGE_PERMISSION as any);
+      }
+      target.permissionsDeny = Array.from(new Set(nextPermissions)) as any;
     }
 
     await target.save();
@@ -698,8 +956,47 @@ export const deleteAdmin = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    await target.deleteOne();
+    await moveDocumentToTrash({
+      entityType: "admin_user",
+      document: target,
+      label: `${target.name} · ${target.email}`,
+      req,
+    });
     res.status(200).json({ message: "Admin user deleted successfully." });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+};
+
+export const setAdminTrashAccess = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const target = await User.findById(req.params.id);
+    if (!target || getEffectiveAdminRole(target.role, target.email) === "super_admin") {
+      res.status(404).json({ error: "Admin user not found." });
+      return;
+    }
+
+    const enabled = req.body?.enabled === true;
+    const allowed = new Set(target.permissionsAllow || []);
+    const denied = new Set(target.permissionsDeny || []);
+    if (enabled) {
+      allowed.add(TRASH_MANAGE_PERMISSION);
+      denied.delete(TRASH_MANAGE_PERMISSION);
+    } else {
+      allowed.delete(TRASH_MANAGE_PERMISSION);
+      denied.add(TRASH_MANAGE_PERMISSION);
+    }
+    target.permissionsAllow = Array.from(allowed) as any;
+    target.permissionsDeny = Array.from(denied) as any;
+    await target.save();
+
+    res.json({
+      message: enabled ? "Protected archive access granted." : "Protected archive access revoked.",
+      user: {
+        ...sanitizeUser(target),
+        protectedArchiveAccess: enabled,
+      },
+    });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
@@ -743,34 +1040,9 @@ export const verifyToken = async (
   req: Request,
   res: Response
 ): Promise<void> => {
-  try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      res.status(400).json({
-        valid: false,
-        error: "No token provided or invalid header format",
-      });
-      return;
-    }
-
-    const token = authHeader.split(" ")[1];
-
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      res.status(200).json({
-        valid: true,
-        decoded,
-        message: "Token is valid",
-      });
-    } catch (err: any) {
-      res.status(401).json({
-        valid: false,
-        error: err.message,
-        errorType: err.name,
-      });
-    }
-  } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
-  }
+  res.status(200).json({
+    valid: true,
+    decoded: req.user,
+    message: "Token is valid",
+  });
 };

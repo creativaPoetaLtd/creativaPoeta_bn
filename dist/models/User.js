@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const MailboxAccessSchema = new mongoose_1.Schema({
     address: { type: String, trim: true, lowercase: true, required: true },
     permission: {
@@ -49,7 +50,7 @@ const MailboxAccessSchema = new mongoose_1.Schema({
 }, { _id: false });
 const UserSchema = new mongoose_1.Schema({
     name: { type: String, required: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    email: { type: String, required: true, lowercase: true, trim: true },
     password: { type: String, default: "" },
     role: {
         type: String,
@@ -80,5 +81,16 @@ const UserSchema = new mongoose_1.Schema({
     permissionsAllow: { type: [String], default: [] },
     permissionsDeny: { type: [String], default: [] },
     internalGroups: { type: [String], default: [] },
+    mfaEnabled: { type: Boolean, default: false },
+    mfaSecretEncrypted: { type: String, select: false },
+    mfaPendingSecretEncrypted: { type: String, select: false },
+    mfaPendingExpiresAt: { type: Date, select: false },
+    mfaRecoveryCodeHashes: { type: [String], default: [], select: false },
+    mfaFailedAttempts: { type: Number, default: 0, select: false },
+    mfaLockedUntil: { type: Date, select: false },
+    mfaEnabledAt: { type: Date },
+    authVersion: { type: Number, default: 0 },
 }, { timestamps: true });
+UserSchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "admin_user" });
+UserSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { isDeleted: false }, name: "active_user_email_unique" });
 exports.default = mongoose_1.default.model("User", UserSchema);

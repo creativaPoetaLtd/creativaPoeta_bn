@@ -12,6 +12,7 @@ const Job_1 = __importDefault(require("../models/Job"));
 const JobApplication_1 = __importDefault(require("../models/JobApplication"));
 const JobApplicationFile_1 = __importDefault(require("../models/JobApplicationFile"));
 const referralRateLimitService_1 = require("../services/referralRateLimitService");
+const trashService_1 = require("../services/trashService");
 dotenv_1.default.config();
 const clean = (value, max = 5000) => String(value || "").trim().slice(0, max);
 const discoverySources = new Set(["google", "facebook", "instagram", "linkedin", "tiktok", "youtube", "recommendation", "client_or_partner", "creativa_poeta_team", "event", "school", "job_platform", "article_or_website", "other"]);
@@ -91,7 +92,7 @@ const sendJobApplication = async (req, res, next) => {
                 });
             }
             catch (fileError) {
-                await JobApplication_1.default.findByIdAndDelete(application._id);
+                await (0, trashService_1.moveDocumentToTrash)({ entityType: "job_application", document: application, req, reason: "CV storage failed during submission" });
                 throw fileError;
             }
         }
@@ -185,13 +186,22 @@ const updateJobApplication = async (req, res, next) => {
 exports.updateJobApplication = updateJobApplication;
 const deleteJobApplication = async (req, res, next) => {
     try {
-        const application = await JobApplication_1.default.findById(req.params.id).select("_id");
+        const application = await JobApplication_1.default.findById(req.params.id);
         if (!application) {
             res.status(404).json({ message: "Application not found." });
             return;
         }
-        await JobApplicationFile_1.default.deleteOne({ application: application._id });
-        await application.deleteOne();
+        const applicationFile = await JobApplicationFile_1.default.findOne({ application: application._id });
+        await (0, trashService_1.moveSnapshotToTrash)({
+            entityType: "job_application",
+            originalId: String(application._id),
+            label: `${application.fullName || "Job application"} · ${application.email || application._id}`,
+            snapshot: (0, trashService_1.snapshotForTrash)(application),
+            relatedSnapshots: applicationFile
+                ? [{ entityType: "job_application_file", snapshot: (0, trashService_1.snapshotForTrash)(applicationFile) }]
+                : [],
+            req,
+        });
         res.status(200).json({ message: "Application deleted." });
     }
     catch (error) {

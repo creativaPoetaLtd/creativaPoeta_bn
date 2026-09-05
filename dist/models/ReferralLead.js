@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const ReferralLeadSchema = new mongoose_1.Schema({
     partner: { type: mongoose_1.Schema.Types.ObjectId, ref: "ReferralPartner", required: true },
     partnerId: { type: String, required: true, trim: true, uppercase: true },
@@ -68,6 +69,7 @@ const ReferralLeadSchema = new mongoose_1.Schema({
             at: { type: Date, default: Date.now },
         }],
 }, { timestamps: true });
+ReferralLeadSchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "referral_lead" });
 ReferralLeadSchema.index({ status: 1, createdAt: -1 });
 ReferralLeadSchema.index({ partner: 1, createdAt: -1 });
 ReferralLeadSchema.index({ contactEmail: 1, createdAt: -1 });

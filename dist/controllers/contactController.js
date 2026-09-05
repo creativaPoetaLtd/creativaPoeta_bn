@@ -9,6 +9,7 @@ const adminNotificationEmail_1 = require("../utils/adminNotificationEmail");
 const Query_1 = __importDefault(require("../models/Query"));
 const emailTemplate_1 = require("../utils/emailTemplate");
 const communicationLocale_1 = require("../utils/communicationLocale");
+const trashService_1 = require("../services/trashService");
 const getAdminEmail = (req) => { var _a; return String(((_a = req.user) === null || _a === void 0 ? void 0 : _a.email) || "").toLowerCase().trim(); };
 const getAdminName = (req) => { var _a, _b; return String(((_a = req.user) === null || _a === void 0 ? void 0 : _a.name) || ((_b = req.user) === null || _b === void 0 ? void 0 : _b.email) || "Admin").trim(); };
 const addContactActivity = (query, req, type, message) => {
@@ -280,11 +281,17 @@ exports.releaseQuery = releaseQuery;
 const deleteQuery = async (req, res) => {
     try {
         const { id } = req.params;
-        const query = await Query_1.default.findByIdAndDelete(id);
+        const query = await Query_1.default.findById(id);
         if (!query) {
             res.status(404).json({ message: "Query not found" });
             return;
         }
+        await (0, trashService_1.moveDocumentToTrash)({
+            entityType: "contact_query",
+            document: query,
+            label: `${query.name || "Contact message"} · ${query.email || query._id}`,
+            req,
+        });
         res.status(200).json({
             message: "Query deleted successfully",
         });

@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import { softDeletePlugin } from "../plugins/softDeletePlugin";
 
 export type AdminNotificationType = "password_reset";
 export type AdminNotificationStatus = "new" | "read" | "resolved" | "archived";
@@ -47,5 +48,6 @@ const AdminNotificationSchema = new Schema<IAdminNotification>(
 );
 
 AdminNotificationSchema.index({ type: 1, status: 1, createdAt: -1 });
+AdminNotificationSchema.plugin(softDeletePlugin, { entityType: "admin_notification" });
 
 export default mongoose.model<IAdminNotification>("AdminNotification", AdminNotificationSchema);

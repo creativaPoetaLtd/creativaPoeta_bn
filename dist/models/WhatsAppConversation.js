@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
+const softDeletePlugin_1 = require("../plugins/softDeletePlugin");
 const WhatsAppActivitySchema = new mongoose_1.Schema({
     type: {
         type: String,
@@ -46,7 +47,7 @@ const WhatsAppActivitySchema = new mongoose_1.Schema({
     at: { type: Date, default: Date.now },
 }, { _id: true });
 const WhatsAppConversationSchema = new mongoose_1.Schema({
-    conversationKey: { type: String, required: true, unique: true, index: true },
+    conversationKey: { type: String, required: true },
     waId: { type: String, required: true, trim: true, index: true },
     phoneNumberId: { type: String, required: true, trim: true },
     displayPhoneNumber: { type: String, trim: true },
@@ -71,4 +72,6 @@ const WhatsAppConversationSchema = new mongoose_1.Schema({
 }, { timestamps: true });
 WhatsAppConversationSchema.index({ status: 1, lastMessageAt: -1 });
 WhatsAppConversationSchema.index({ assignedToEmail: 1, status: 1, lastMessageAt: -1 });
+WhatsAppConversationSchema.plugin(softDeletePlugin_1.softDeletePlugin, { entityType: "whatsapp_conversation", audit: false });
+WhatsAppConversationSchema.index({ conversationKey: 1 }, { unique: true, partialFilterExpression: { isDeleted: false }, name: "active_whatsapp_conversation_key_unique" });
 exports.default = mongoose_1.default.model("WhatsAppConversation", WhatsAppConversationSchema);
