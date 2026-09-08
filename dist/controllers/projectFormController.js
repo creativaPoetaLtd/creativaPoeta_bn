@@ -24,7 +24,7 @@ const getImpactAcknowledgement = (locale) => {
             signature: "L'équipe Creativa Poeta Impact",
             content: `
         <p style="margin:0 0 14px;">Bonjour,</p>
-        <p style="margin:0 0 14px;">Merci de nous avoir présenté votre organisation et sa mission. Votre candidature au programme <strong>Creativa Poeta Impact — Une Pierre de Plus</strong> est bien enregistrée.</p>
+        <p style="margin:0 0 14px;">Merci de nous avoir présenté votre organisation et sa mission. Votre candidature au programme <strong>Creativa Poeta Impact</strong> est bien enregistrée.</p>
         <div style="margin:20px 0;padding:16px 18px;border-left:4px solid #EEBA2B;background:#f8faf9;">
           <strong style="color:#071a33;">Prochaine étape</strong><br>
           <span>Notre équipe étudie l'impact, le besoin et la faisabilité du projet. Nous vous répondrons, dans la mesure du possible, sous 7 à 14 jours.</span>
@@ -38,7 +38,7 @@ const getImpactAcknowledgement = (locale) => {
             signature: "Het Creativa Poeta Impact-team",
             content: `
         <p style="margin:0 0 14px;">Hallo,</p>
-        <p style="margin:0 0 14px;">Bedankt om uw organisatie en missie voor te stellen. Uw aanvraag voor <strong>Creativa Poeta Impact — Een Steen Erbij</strong> is geregistreerd.</p>
+        <p style="margin:0 0 14px;">Bedankt om uw organisatie en missie voor te stellen. Uw aanvraag voor <strong>Creativa Poeta Impact</strong> is geregistreerd.</p>
         <div style="margin:20px 0;padding:16px 18px;border-left:4px solid #EEBA2B;background:#f8faf9;">
           <strong style="color:#071a33;">Volgende stap</strong><br>
           <span>Ons team beoordeelt de impact, de behoefte en de haalbaarheid. Waar mogelijk antwoorden we binnen 7 tot 14 dagen.</span>
@@ -52,7 +52,7 @@ const getImpactAcknowledgement = (locale) => {
             signature: "The Creativa Poeta Impact team",
             content: `
         <p style="margin:0 0 14px;">Hello,</p>
-        <p style="margin:0 0 14px;">Thank you for presenting your organization and mission. Your application to <strong>Creativa Poeta Impact — One More Stone</strong> has been recorded.</p>
+        <p style="margin:0 0 14px;">Thank you for presenting your organization and mission. Your application to <strong>Creativa Poeta Impact</strong> has been recorded.</p>
         <div style="margin:20px 0;padding:16px 18px;border-left:4px solid #EEBA2B;background:#f8faf9;">
           <strong style="color:#071a33;">Next step</strong><br>
           <span>Our team will review the impact, need and feasibility of the project. Where possible, we will reply within 7 to 14 days.</span>
@@ -86,11 +86,31 @@ const canModifyProjectAssignment = (req, request) => !request.assignedToEmail ||
 const getProjectBucket = (request) => {
     const serviceType = String(request.serviceType || "").toLowerCase();
     const selected = Array.isArray(request.selectedServices) ? request.selectedServices.join(" ").toLowerCase() : "";
+    if (serviceType.includes("creativa poeta impact"))
+        return "impact";
     if (serviceType.includes("diagnostic visibilite") || serviceType.includes("visibility test") || selected.includes("test visibilite"))
         return "visibility";
     if (serviceType.includes("assistance numerique") || serviceType.includes("digital assistance") || serviceType.includes("depannage") || selected.includes("depannage") || selected.includes("troubleshooting"))
         return "assistance";
     return "projects";
+};
+const bucketMatchers = {
+    impact: [{ serviceType: /creativa poeta impact/i }],
+    visibility: [{ serviceType: /diagnostic visibilit/i }, { serviceType: /visibility test/i }, { selectedServices: /test visibilit/i }],
+    assistance: [
+        { serviceType: /assistance num[eé]rique/i },
+        { serviceType: /digital assistance/i },
+        { serviceType: /depannage|d[eé]pannage/i },
+        { selectedServices: /depannage|d[eé]pannage|troubleshooting/i },
+    ],
+};
+const getProjectBucketFilter = (kind) => {
+    const bucket = String(kind || "").toLowerCase();
+    if (bucket === "projects")
+        return { $nor: [...bucketMatchers.impact, ...bucketMatchers.visibility, ...bucketMatchers.assistance] };
+    if (bucket === "impact" || bucket === "visibility" || bucket === "assistance")
+        return { $or: bucketMatchers[bucket] };
+    return {};
 };
 const sendProjectInquiry = async (req, res, next) => {
     try {
@@ -405,6 +425,7 @@ const getProjectRequestSummary = async (req, res, next) => {
         const requests = await ProjectDescription_1.default.find({}, "status isReplied serviceType selectedServices assignedToEmail").lean();
         const metrics = {
             projects: 0,
+            impact: 0,
             visibility: 0,
             assistance: 0,
             assignedToMe: 0,
@@ -428,11 +449,12 @@ exports.getProjectRequestSummary = getProjectRequestSummary;
 // Get all project requests for dashboard
 const getAllProjectRequests = async (req, res, next) => {
     try {
-        const { status, page = 1, limit = 10 } = req.query;
+        const { status, kind, page = 1, limit = 10 } = req.query;
         const filter = {};
         if (status && status !== "all") {
             filter.status = status;
         }
+        Object.assign(filter, getProjectBucketFilter(kind));
         const skip = (Number(page) - 1) * Number(limit);
         const requests = await ProjectDescription_1.default.find(filter)
             .sort({ createdAt: -1 })
