@@ -29,7 +29,6 @@ const getImpactAcknowledgement = (locale) => {
           <strong style="color:#071a33;">Prochaine étape</strong><br>
           <span>Notre équipe étudie l'impact, le besoin et la faisabilité du projet. Nous vous répondrons, dans la mesure du possible, sous 7 à 14 jours.</span>
         </div>
-        <p style="margin:0 0 14px;"><strong>Aucun paiement ne sera demandé pour l'examen de cette demande.</strong></p>
         <p style="margin:0;">Vous pouvez répondre directement à cet email si une précision importante doit être ajoutée.</p>`,
         },
         nl: {
@@ -43,7 +42,6 @@ const getImpactAcknowledgement = (locale) => {
           <strong style="color:#071a33;">Volgende stap</strong><br>
           <span>Ons team beoordeelt de impact, de behoefte en de haalbaarheid. Waar mogelijk antwoorden we binnen 7 tot 14 dagen.</span>
         </div>
-        <p style="margin:0 0 14px;"><strong>Voor de beoordeling van deze aanvraag wordt geen betaling gevraagd.</strong></p>
         <p style="margin:0;">U kunt rechtstreeks op deze e-mail antwoorden als u een belangrijke aanvulling hebt.</p>`,
         },
         en: {
@@ -57,7 +55,6 @@ const getImpactAcknowledgement = (locale) => {
           <strong style="color:#071a33;">Next step</strong><br>
           <span>Our team will review the impact, need and feasibility of the project. Where possible, we will reply within 7 to 14 days.</span>
         </div>
-        <p style="margin:0 0 14px;"><strong>No payment will be requested to review this application.</strong></p>
         <p style="margin:0;">You can reply directly to this email if you need to add an important detail.</p>`,
         },
     };
