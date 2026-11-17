@@ -1,0 +1,38 @@
+# CP Art — catalogue et demandes
+
+Le module est monté sous `/api/art`. Il ne prend aucun paiement et ne transmet aucune commande à un imprimeur.
+
+## Routes
+
+| Méthode et chemin | Usage | Accès |
+| --- | --- | --- |
+| GET `/catalog` | Œuvres publiées et variantes disponibles, sans référence fournisseur | Public |
+| POST `/quote` | Vérification des œuvres, quantités, prix actuels et pays ; sous-total hors livraison à confirmer | Public |
+| POST `/requests` | Enregistrement d’une demande non contractuelle avec consentement et référence | Public |
+| GET/POST `/admin/artworks` | Liste privée et création d’œuvres | `art:catalog` |
+| PATCH `/admin/artworks/:id` | Modification, publication ou archivage avec version attendue | `art:catalog` |
+| POST `/admin/images` | Photo de présentation JPEG/PNG/WebP, 3 Mo maximum | `art:catalog` |
+| GET `/admin/requests` | Demandes clients privées | `art:requests` |
+| PATCH `/admin/requests/:id` | Suivi et note interne avec version attendue | `art:requests` |
+
+Toutes les routes d’administration passent par l’authentification et la vérification des permissions existantes. Les réponses du module utilisent `Cache-Control: no-store`.
+
+## Données
+
+`ArtArtwork` conserve le contenu éditorial multilingue, les photographies ordonnées et les variantes en EUR. `collectionSlug` est le nom du champ MongoDB, exposé comme `collection` par l’API. Les prix sont des entiers en centimes. Une publication nécessite une histoire française, une photo décrite et une variante disponible et chiffrée. Les pays initiaux sont ceux de l’Union européenne.
+
+`ArtRequest` conserve les coordonnées nécessaires à une réponse, le consentement horodaté, la sélection et l’instantané des prix calculés par le serveur. Les nouvelles requêtes sont validées à partir du catalogue publié et des variantes disponibles. Le client ne peut pas fournir un montant faisant autorité ou un statut payé. Les références de répétition sont liées au contenu de la demande pour éviter les doublons et les réutilisations silencieuses.
+
+Les modèles utilisent les protections d’audit, de suppression physique et de concurrence du projet. Aucun endpoint de suppression n’est ajouté. Les références privées des imprimeurs restent dans le catalogue d’administration.
+
+## Images et paramètres
+
+Réutiliser les variables Cloudinary existantes côté backend. Les images publiques sont enregistrées dans le chemin `cp-art` et limitées à 2400 pixels par côté. Le contenu binaire et le type annoncé sont vérifiés. Ces images servent à présenter les œuvres ; les fichiers haute définition de fabrication doivent être gérés dans un stockage privé distinct lors de l’intégration du prestataire.
+
+MongoDB utilise la connexion habituelle du backend en exploitation. Le serveur de vérification `scripts/art-qa-server.cjs` crée exclusivement une nouvelle base temporaire sur localhost, avec des utilisateurs fictifs ; il ne reçoit aucune URL de base existante.
+
+## Validation
+
+`npm.cmd test` : 46 tests réussis, incluant les politiques CP Art. `scripts/verify-art-api.cjs` : 21 scénarios avec MongoDB temporaire, dont permissions, confidentialité, modification de prix, archivage et répétition des soumissions. Le frontend comporte également des contrôles navigateur du parcours raccordé.
+
+Le compte Cloudinary réel, Stripe, les paiements et les fabrications n’ont pas été sollicités pendant ces vérifications. Aucun déploiement n’est inclus dans cette étape.

@@ -16,6 +16,7 @@ import healthRouter from "./healthRoutes";
 import referralProgramRouter from "./referralProgramRoutes";
 import whatsAppRouter from "./whatsAppRoutes";
 import trashRouter from "./trashRoutes";
+import artRouter from "./artRoutes";
 import { authenticateUser } from "../middleware/authMiddleware";
 import { authorizeAdminPermission } from "../middleware/permissionMiddleware";
 
@@ -37,6 +38,7 @@ router.use("/whatsapp", whatsAppRouter);
 router.use("/trash", trashRouter);
 router.use("/analytics", analyticsRouter);
 router.use("/health", healthRouter);
+router.use("/art", artRouter);
 
 // Email test endpoint for debugging
 router.get("/test-email", authenticateUser, authorizeAdminPermission("referrals:settings"), testEmail);
