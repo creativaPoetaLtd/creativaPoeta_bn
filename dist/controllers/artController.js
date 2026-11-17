@@ -8,6 +8,7 @@ const mongoose_1 = __importDefault(require("mongoose"));
 const node_crypto_1 = __importDefault(require("node:crypto"));
 const ArtArtwork_1 = __importDefault(require("../models/ArtArtwork"));
 const ArtRequest_1 = __importDefault(require("../models/ArtRequest"));
+const artCommerceService_1 = require("../services/artCommerceService");
 const cloudinary_1 = __importDefault(require("../utils/cloudinary"));
 const artPolicy_1 = require("../domain/artPolicy");
 const artHandler = (handler) => async (req, res, _next) => {
@@ -83,16 +84,11 @@ exports.uploadArtImage = (0, exports.artHandler)(async (req, res) => {
     });
     res.status(201).json({ image: { url: result.secure_url, alt: { fr: "", en: "", nl: "" } } });
 });
-const buildQuote = async (body) => {
-    const cart = (0, artPolicy_1.parseArtCart)(body);
-    const artworks = await ArtArtwork_1.default.find({ _id: { $in: cart.items.map(item => item.artworkId) }, status: "published" }).lean();
-    return (0, artPolicy_1.quoteArtCart)(cart, artworks);
-};
-exports.getArtQuote = (0, exports.artHandler)(async (req, res) => { res.json({ quote: await buildQuote(req.body) }); });
+exports.getArtQuote = (0, exports.artHandler)(async (req, res) => { res.json({ quote: await (0, artCommerceService_1.buildArtQuote)(req.body) }); });
 exports.createArtRequest = (0, exports.artHandler)(async (req, res) => {
     const contact = (0, artPolicy_1.parseArtRequest)(req.body);
     const cart = (0, artPolicy_1.parseArtCart)(req.body);
-    const requestFingerprint = node_crypto_1.default.createHash("sha256").update(JSON.stringify({ name: contact.name, email: contact.email, locale: contact.locale, message: contact.message, cart })).digest("hex");
+    const requestFingerprint = node_crypto_1.default.createHash("sha256").update(JSON.stringify({ name: contact.name, email: contact.email, locale: contact.locale, message: contact.message, cart, shippingMethods: req.body.shippingMethods || {} })).digest("hex");
     const existing = await ArtRequest_1.default.findOne({ idempotencyKey: contact.idempotencyKey }).select("reference email +requestFingerprint").lean();
     if (existing) {
         if (existing.email !== contact.email || existing.requestFingerprint !== requestFingerprint)
@@ -100,7 +96,7 @@ exports.createArtRequest = (0, exports.artHandler)(async (req, res) => {
         res.json({ reference: existing.reference, status: "received", paymentEnabled: false });
         return;
     }
-    const quote = await buildQuote(req.body);
+    const quote = await (0, artCommerceService_1.buildArtQuote)(req.body);
     const reference = `CPA-${new Date().getUTCFullYear()}-${node_crypto_1.default.randomBytes(6).toString("hex").toUpperCase()}`;
     const request = await ArtRequest_1.default.create({ ...contact, quote, reference, requestFingerprint, consentAt: new Date(), paymentStatus: "not_requested" });
     res.status(201).json({ reference: request.reference, status: "received", paymentEnabled: false });

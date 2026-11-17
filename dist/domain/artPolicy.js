@@ -93,7 +93,10 @@ function parseArtArtwork(value) {
         const leadDaysMax = integer(item.leadDaysMax, leadDaysMin, 180, "Préparation maximum");
         if (typeof item.available !== "boolean")
             return invalid("Disponibilité invalide.");
-        return { id, material: String(item.material), format: (0, exports.artString)(item.format, 80, "Format", true), priceCents: integer(item.priceCents, 1, 10000000, "Prix en centimes"), fulfillment: item.fulfillment, provider: (0, exports.artString)(item.provider, 80, "Prestataire"), providerReference: (0, exports.artString)(item.providerReference, 160, "Référence prestataire"), leadDaysMin, leadDaysMax, countries: [...new Set(countries)], available: item.available };
+        const shippingProfileId = (0, exports.artString)(item.shippingProfileId, 80, "Profil de livraison");
+        if (shippingProfileId && !/^[a-zA-Z0-9_-]+$/.test(shippingProfileId))
+            return invalid("Profil de livraison invalide.");
+        return { id, shippingProfileId, material: String(item.material), format: (0, exports.artString)(item.format, 80, "Format", true), priceCents: integer(item.priceCents, 1, 10000000, "Prix en centimes"), fulfillment: item.fulfillment, provider: (0, exports.artString)(item.provider, 80, "Prestataire"), providerReference: (0, exports.artString)(item.providerReference, 160, "Référence prestataire"), leadDaysMin, leadDaysMax, countries: [...new Set(countries)], available: item.available };
     });
     if (new Set(variants.map(item => item.id)).size !== variants.length)
         return invalid("Les identifiants de variantes doivent être uniques.");
@@ -103,7 +106,7 @@ function parseArtArtwork(value) {
 }
 function publicArtwork(data) {
     return { id: String(data._id), slug: data.slug, collection: data.collectionSlug, title: data.title, sentence: data.sentence, story: data.story, details: data.details, images: data.images, artist: data.artist, orientation: data.orientation, currency: data.currency, updatedAt: data.updatedAt,
-        variants: data.variants.filter(item => item.available).map(({ provider, providerReference, ...item }) => item) };
+        variants: data.variants.filter(item => item.available).map(({ provider, providerReference, shippingProfileId, ...item }) => item) };
 }
 function parseArtCart(value) {
     const data = record(value);

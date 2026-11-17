@@ -57,6 +57,8 @@ const rateBuckets = new Map();
 const rateProfile = (req) => {
     if (["GET", "HEAD", "OPTIONS"].includes(req.method))
         return null;
+    if (req.path === "/api/art/stripe/webhook")
+        return null;
     if (req.path === "/api/whatsapp/webhook" || req.path === "/api/emails/cron-sync")
         return null;
     if (/^\/api\/auth\/(login|mfa\/|forgot-password|reset-password)/.test(req.path))

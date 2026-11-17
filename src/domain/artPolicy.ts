@@ -6,7 +6,7 @@ export type ArtImage = { url: string; alt: ArtLocalized };
 export type ArtVariant = {
   id: string; material: string; format: string; priceCents: number;
   fulfillment: "studio" | "print_on_demand"; provider: string; providerReference: string;
-  leadDaysMin: number; leadDaysMax: number; countries: string[]; available: boolean;
+  leadDaysMin: number; leadDaysMax: number; countries: string[]; available: boolean; shippingProfileId?: string;
 };
 export type ArtArtworkInput = {
   slug: string; collectionSlug: string; title: ArtLocalized; sentence: ArtLocalized; story: ArtLocalized;
@@ -73,7 +73,9 @@ export function parseArtArtwork(value: unknown): ArtArtworkInput {
     const leadDaysMin = integer(item.leadDaysMin, 0, 180, "Préparation minimum");
     const leadDaysMax = integer(item.leadDaysMax, leadDaysMin, 180, "Préparation maximum");
     if (typeof item.available !== "boolean") return invalid("Disponibilité invalide.");
-    return { id, material: String(item.material), format: artString(item.format, 80, "Format", true), priceCents: integer(item.priceCents, 1, 10_000_000, "Prix en centimes"), fulfillment: item.fulfillment, provider: artString(item.provider, 80, "Prestataire"), providerReference: artString(item.providerReference, 160, "Référence prestataire"), leadDaysMin, leadDaysMax, countries: [...new Set(countries)], available: item.available } as ArtVariant;
+    const shippingProfileId = artString(item.shippingProfileId, 80, "Profil de livraison");
+    if (shippingProfileId && !/^[a-zA-Z0-9_-]+$/.test(shippingProfileId)) return invalid("Profil de livraison invalide.");
+    return { id, shippingProfileId, material: String(item.material), format: artString(item.format, 80, "Format", true), priceCents: integer(item.priceCents, 1, 10_000_000, "Prix en centimes"), fulfillment: item.fulfillment, provider: artString(item.provider, 80, "Prestataire"), providerReference: artString(item.providerReference, 160, "Référence prestataire"), leadDaysMin, leadDaysMax, countries: [...new Set(countries)], available: item.available } as ArtVariant;
   });
   if (new Set(variants.map(item => item.id)).size !== variants.length) return invalid("Les identifiants de variantes doivent être uniques.");
   if (status === "published" && (!images.length || !variants.some(item => item.available))) return invalid("Ajoutez une photo et une variante disponible avant publication.");
@@ -81,7 +83,7 @@ export function parseArtArtwork(value: unknown): ArtArtworkInput {
 }
 export function publicArtwork(data: ArtArtworkInput & { _id?: unknown; updatedAt?: unknown }) {
   return { id: String(data._id), slug: data.slug, collection: data.collectionSlug, title: data.title, sentence: data.sentence, story: data.story, details: data.details, images: data.images, artist: data.artist, orientation: data.orientation, currency: data.currency, updatedAt: data.updatedAt,
-    variants: data.variants.filter(item => item.available).map(({ provider, providerReference, ...item }) => item) };
+    variants: data.variants.filter(item => item.available).map(({ provider, providerReference, shippingProfileId, ...item }) => item) };
 }
 export type ArtCartItem = { artworkId: string; variantId: string; quantity: number };
 export function parseArtCart(value: unknown): { country: string; items: ArtCartItem[] } {

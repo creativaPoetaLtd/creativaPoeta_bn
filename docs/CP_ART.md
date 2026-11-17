@@ -1,6 +1,6 @@
 # CP Art — catalogue et demandes
 
-Le module est monté sous `/api/art`. Il ne prend aucun paiement et ne transmet aucune commande à un imprimeur.
+Le module est monté sous `/api/art`. Les demandes restent non contractuelles. La nouvelle intégration de livraison, Stripe et commandes est décrite dans [CP_ART_COMMERCE.md](CP_ART_COMMERCE.md) ; les paiements sont désactivés par défaut et aucun envoi automatique à un imprimeur n’est effectué.
 
 ## Routes
 

@@ -3,8 +3,9 @@ import mongoose from "mongoose";
 import crypto from "node:crypto";
 import ArtArtwork from "../models/ArtArtwork";
 import ArtRequest from "../models/ArtRequest";
+import { buildArtQuote } from "../services/artCommerceService";
 import cloudinary from "../utils/cloudinary";
-import { ArtInputError, parseArtArtwork, parseArtCart, parseArtRequest, publicArtwork, quoteArtCart } from "../domain/artPolicy";
+import { ArtInputError, parseArtArtwork, parseArtCart, parseArtRequest, publicArtwork } from "../domain/artPolicy";
 
 export const artHandler = (handler: (req: Request, res: Response) => Promise<void>) => async (req: Request, res: Response, _next: NextFunction) => {
   res.setHeader("Cache-Control", "no-store");
@@ -51,22 +52,17 @@ export const uploadArtImage = artHandler(async (req, res) => {
   });
   res.status(201).json({ image: { url: result.secure_url, alt: { fr: "", en: "", nl: "" } } });
 });
-const buildQuote = async (body: unknown) => {
-  const cart = parseArtCart(body);
-  const artworks = await ArtArtwork.find({ _id: { $in: cart.items.map(item => item.artworkId) }, status: "published" }).lean();
-  return quoteArtCart(cart, artworks as any);
-};
-export const getArtQuote = artHandler(async (req, res) => { res.json({ quote: await buildQuote(req.body) }); });
+export const getArtQuote = artHandler(async (req, res) => { res.json({ quote: await buildArtQuote(req.body) }); });
 export const createArtRequest = artHandler(async (req, res) => {
   const contact = parseArtRequest(req.body);
   const cart = parseArtCart(req.body);
-  const requestFingerprint = crypto.createHash("sha256").update(JSON.stringify({ name: contact.name, email: contact.email, locale: contact.locale, message: contact.message, cart })).digest("hex");
+  const requestFingerprint = crypto.createHash("sha256").update(JSON.stringify({ name: contact.name, email: contact.email, locale: contact.locale, message: contact.message, cart, shippingMethods: req.body.shippingMethods || {} })).digest("hex");
   const existing = await ArtRequest.findOne({ idempotencyKey: contact.idempotencyKey }).select("reference email +requestFingerprint").lean();
   if (existing) {
     if (existing.email !== contact.email || existing.requestFingerprint !== requestFingerprint) throw new ArtInputError("Cette référence correspond à une autre demande. Préparez une nouvelle demande.");
     res.json({ reference: existing.reference, status: "received", paymentEnabled: false }); return;
   }
-  const quote = await buildQuote(req.body);
+  const quote = await buildArtQuote(req.body);
   const reference = `CPA-${new Date().getUTCFullYear()}-${crypto.randomBytes(6).toString("hex").toUpperCase()}`;
   const request = await ArtRequest.create({ ...contact, quote, reference, requestFingerprint, consentAt: new Date(), paymentStatus: "not_requested" });
   res.status(201).json({ reference: request.reference, status: "received", paymentEnabled: false });

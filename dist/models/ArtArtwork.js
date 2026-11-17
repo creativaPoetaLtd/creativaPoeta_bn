@@ -43,7 +43,7 @@ const variant = new mongoose_1.Schema({
     fulfillment: { type: String, enum: ["studio", "print_on_demand"], required: true },
     provider: { type: String, maxlength: 80 }, providerReference: { type: String, maxlength: 160 },
     leadDaysMin: { type: Number, min: 0, max: 180 }, leadDaysMax: { type: Number, min: 0, max: 180 },
-    countries: [{ type: String }], available: { type: Boolean, default: true },
+    shippingProfileId: { type: String, maxlength: 80, default: "" }, countries: [{ type: String }], available: { type: Boolean, default: true },
 }, { _id: false });
 const schema = new mongoose_1.Schema({
     slug: { type: String, required: true, maxlength: 100 }, collectionSlug: { type: String, required: true, enum: artPolicy_1.ART_COLLECTIONS },

@@ -60,6 +60,7 @@ type RateBucket = { count: number; resetAt: number };
 const rateBuckets = new Map<string, RateBucket>();
 const rateProfile = (req: express.Request) => {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return null;
+  if (req.path === "/api/art/stripe/webhook") return null;
   if (req.path === "/api/whatsapp/webhook" || req.path === "/api/emails/cron-sync") return null;
   if (/^\/api\/auth\/(login|mfa\/|forgot-password|reset-password)/.test(req.path)) return { name: "auth", limit: 15, windowMs: 15 * 60_000 };
   if (/^\/api\/analytics/.test(req.path)) return { name: "analytics", limit: 400, windowMs: 10 * 60_000 };

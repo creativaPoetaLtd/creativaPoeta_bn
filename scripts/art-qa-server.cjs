@@ -10,6 +10,7 @@ process.env.JWT_SECRET = crypto.randomBytes(32).toString("hex");
 process.env.CLOUDINARY_CLOUD_NAME = "cp-art-qa";
 process.env.CLOUDINARY_API_KEY = "qa-not-a-real-key";
 process.env.CLOUDINARY_API_SECRET = "qa-not-a-real-secret";
+const stripeQA = process.env.CP_ART_QA_COMMERCE === "true" ? require("./art-stripe-qa.cjs") : null;
 const sessionFile = path.resolve(process.env.CP_ART_QA_SESSION_PATH || "../cp-art-qa-session.json");
 const text = fr => ({ fr, en: "", nl: "" });
 let mongo, server;
@@ -36,7 +37,10 @@ async function stop(code = 0) {
   const payload = { slug: "oeuvre-verification", collection: "art-et-decoration", title: text("Œuvre de vérification QA"), sentence: text("Une étude réservée aux tests locaux."), story: text("Cette fiche temporaire sert à vérifier le catalogue, les photos et les demandes. Elle ne fait pas partie du catalogue commercial."), artist: "Atelier QA local", details: [{ title: text("La lumière"), text: text("Un détail de test.") }], images: [{ url: "https://res.cloudinary.com/cp-art-qa/image/upload/v1/cp-art/le-passage.webp", alt: text("Vue complète de l’étude de test") }, { url: "https://res.cloudinary.com/cp-art-qa/image/upload/v1/cp-art/detail.webp", alt: text("Deuxième photo de vérification") }], variants: [{ id: "canvas-60", material: "canvas", format: "60 × 40 cm", priceCents: 7490, fulfillment: "studio", provider: "private-provider", providerReference: "private-reference", leadDaysMin: 3, leadDaysMax: 7, countries: ["BE", "FR"], available: true }, { id: "poster-60", material: "poster", format: "60 × 40 cm", priceCents: 3990, fulfillment: "print_on_demand", provider: "private-provider", providerReference: "private-reference", leadDaysMin: 2, leadDaysMax: 5, countries: ["BE", "FR"], available: true }], orientation: "landscape", status: "published", displayOrder: 0, currency: "EUR" };
   const artwork = await Artwork.create(parseArtArtwork(payload));
   await Artwork.create(parseArtArtwork({ ...payload, slug: "brouillon-prive", title: text("Brouillon privé QA"), status: "draft" }));
-  server = app.listen(5190, "127.0.0.1", () => {
+  const qaApp = require("express")();
+  if (stripeQA) qaApp.get("/__qa/stripe/sessions/:id", (req, res) => { const session = stripeQA.sessions.get(req.params.id); res.status(session ? 200 : 404).json(session || {}); });
+  qaApp.use(app);
+  server = qaApp.listen(5190, "127.0.0.1", () => {
     fs.writeFileSync(sessionFile, JSON.stringify({ base: "http://127.0.0.1:5190", adminToken: sign(admin), viewerToken: sign(viewer), adminUser: { id: String(admin._id), name: admin.name, email: admin.email, role: "admin_0" }, artworkId: String(artwork._id), slug: payload.slug }));
     console.log("CP Art isolated QA API ready at http://127.0.0.1:5190 (temporary data only).");
   });
