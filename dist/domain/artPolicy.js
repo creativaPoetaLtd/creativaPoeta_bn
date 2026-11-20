@@ -51,7 +51,7 @@ const isArtImageUrl = (value) => {
 };
 exports.isArtImageUrl = isArtImageUrl;
 function parseArtArtwork(value) {
-    var _a;
+    var _a, _b;
     const data = record(value);
     const slug = (0, exports.artString)(data.slug, 100, "Adresse", true);
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))
@@ -72,9 +72,19 @@ function parseArtArtwork(value) {
             return invalid("Utilisez une photo téléversée dans CP Art.");
         return { url, alt: localized(image.alt, 240, "Description de la photo", true) };
     });
-    if (!Array.isArray(data.details) || data.details.length > 8)
+    const detailValues = (_a = data.details) !== null && _a !== void 0 ? _a : [];
+    if (!Array.isArray(detailValues) || detailValues.length > 8)
         return invalid("Maximum 8 détails symboliques.");
-    const details = data.details.map(value => { const item = record(value); return { title: localized(item.title, 120, "Détail", true), text: localized(item.text, 1200, "Explication", true) }; });
+    const details = detailValues.flatMap((value, index) => {
+        const item = record(value);
+        const title = localized(item.title, 120, `Nom du détail ${index + 1}`);
+        const text = localized(item.text, 1200, `Explication du détail ${index + 1}`);
+        if (![...Object.values(title), ...Object.values(text)].some(Boolean))
+            return [];
+        if (!title.fr || !text.fr)
+            return invalid(`Complétez le nom et l’explication en français du détail ${index + 1}, ou retirez ce détail facultatif.`);
+        return [{ title, text }];
+    });
     if (!Array.isArray(data.variants) || data.variants.length > 30)
         return invalid("Maximum 30 variantes par œuvre.");
     const variants = data.variants.map(value => {
@@ -102,7 +112,7 @@ function parseArtArtwork(value) {
         return invalid("Les identifiants de variantes doivent être uniques.");
     if (status === "published" && (!images.length || !variants.some(item => item.available)))
         return invalid("Ajoutez une photo et une variante disponible avant publication.");
-    return { slug, collectionSlug: String(data.collection), title: localized(data.title, 160, "Titre", true), sentence: localized(data.sentence, 350, "Présentation"), story: localized(data.story, 8000, "Histoire", status === "published"), details, images, variants, orientation: data.orientation, status: status, artist: (0, exports.artString)(data.artist, 120, "Artiste"), displayOrder: integer((_a = data.displayOrder) !== null && _a !== void 0 ? _a : 0, 0, 10000, "Ordre d’affichage"), currency: "EUR" };
+    return { slug, collectionSlug: String(data.collection), title: localized(data.title, 160, "Titre", true), sentence: localized(data.sentence, 350, "Présentation"), story: localized(data.story, 8000, "Histoire", status === "published"), details, images, variants, orientation: data.orientation, status: status, artist: (0, exports.artString)(data.artist, 120, "Artiste"), displayOrder: integer((_b = data.displayOrder) !== null && _b !== void 0 ? _b : 0, 0, 10000, "Ordre d’affichage"), currency: "EUR" };
 }
 function publicArtwork(data) {
     return { id: String(data._id), slug: data.slug, collection: data.collectionSlug, title: data.title, sentence: data.sentence, story: data.story, details: data.details, images: data.images, artist: data.artist, orientation: data.orientation, currency: data.currency, updatedAt: data.updatedAt,

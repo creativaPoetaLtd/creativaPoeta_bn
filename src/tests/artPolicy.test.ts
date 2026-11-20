@@ -6,6 +6,22 @@ import ArtRequest from "../models/ArtRequest";
 
 const text = (fr: string) => ({ fr, en: "", nl: "" });
 const fixture = () => ({ slug: "lumiere-du-matin", collection: "art-et-decoration", title: text("Lumière du matin"), sentence: text("Le jour se lève."), story: text("Un récit sur la lumière."), details: [], images: [{ url: "https://res.cloudinary.com/test/image/upload/v1/cp-art/photo.webp", alt: text("Vue complète du tableau") }], variants: [{ id: "canvas-40", material: "canvas", format: "40 × 50 cm", priceCents: 4990, fulfillment: "studio", provider: "Prestataire privé", providerReference: "SKU-private", leadDaysMin: 3, leadDaysMax: 7, countries: ["BE", "FR"], available: true }], orientation: "portrait", status: "published", artist: "Creativa Poeta Art", currency: "EUR", displayOrder: 0 });
+test("an artwork can be published without symbolic details, including accidentally added blank rows", () => {
+  const value = fixture();
+  assert.deepEqual(parseArtArtwork({ ...value, details: undefined }).details, []);
+  const output = parseArtArtwork({ ...value, details: [{ title: text("  "), text: text("") }] });
+  assert.equal(output.status, "published");
+  assert.deepEqual(output.details, []);
+  assert.equal(output.story.fr, value.story.fr);
+  assert.equal(output.images.length, 1);
+});
+test("optional details preserve completed content and reject incomplete content instead of silently removing it", () => {
+  const completed = { title: text("Le bateau"), text: { ...text("Il évoque une décision à prendre."), en: "It evokes a decision." } };
+  const output = parseArtArtwork({ ...fixture(), details: [{ title: text(""), text: text("") }, completed] });
+  assert.deepEqual(output.details, [completed]);
+  assert.throws(() => parseArtArtwork({ ...fixture(), details: [{ title: text("Le bateau"), text: text("") }] }), /détail 1/);
+  assert.throws(() => parseArtArtwork({ ...fixture(), details: [{ title: { ...text(""), en: "Boat" }, text: text("") }] }), /détail 1/);
+});
 test("artworks remain drafts until their images, story and sellable variants are ready", () => {
   const value = fixture();
   assert.throws(() => parseArtArtwork({ ...value, images: [] }), ArtInputError);

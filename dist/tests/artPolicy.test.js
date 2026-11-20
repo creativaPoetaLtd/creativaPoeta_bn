@@ -10,6 +10,22 @@ const ArtArtwork_1 = __importDefault(require("../models/ArtArtwork"));
 const ArtRequest_1 = __importDefault(require("../models/ArtRequest"));
 const text = (fr) => ({ fr, en: "", nl: "" });
 const fixture = () => ({ slug: "lumiere-du-matin", collection: "art-et-decoration", title: text("Lumière du matin"), sentence: text("Le jour se lève."), story: text("Un récit sur la lumière."), details: [], images: [{ url: "https://res.cloudinary.com/test/image/upload/v1/cp-art/photo.webp", alt: text("Vue complète du tableau") }], variants: [{ id: "canvas-40", material: "canvas", format: "40 × 50 cm", priceCents: 4990, fulfillment: "studio", provider: "Prestataire privé", providerReference: "SKU-private", leadDaysMin: 3, leadDaysMax: 7, countries: ["BE", "FR"], available: true }], orientation: "portrait", status: "published", artist: "Creativa Poeta Art", currency: "EUR", displayOrder: 0 });
+(0, node_test_1.default)("an artwork can be published without symbolic details, including accidentally added blank rows", () => {
+    const value = fixture();
+    strict_1.default.deepEqual((0, artPolicy_1.parseArtArtwork)({ ...value, details: undefined }).details, []);
+    const output = (0, artPolicy_1.parseArtArtwork)({ ...value, details: [{ title: text("  "), text: text("") }] });
+    strict_1.default.equal(output.status, "published");
+    strict_1.default.deepEqual(output.details, []);
+    strict_1.default.equal(output.story.fr, value.story.fr);
+    strict_1.default.equal(output.images.length, 1);
+});
+(0, node_test_1.default)("optional details preserve completed content and reject incomplete content instead of silently removing it", () => {
+    const completed = { title: text("Le bateau"), text: { ...text("Il évoque une décision à prendre."), en: "It evokes a decision." } };
+    const output = (0, artPolicy_1.parseArtArtwork)({ ...fixture(), details: [{ title: text(""), text: text("") }, completed] });
+    strict_1.default.deepEqual(output.details, [completed]);
+    strict_1.default.throws(() => (0, artPolicy_1.parseArtArtwork)({ ...fixture(), details: [{ title: text("Le bateau"), text: text("") }] }), /détail 1/);
+    strict_1.default.throws(() => (0, artPolicy_1.parseArtArtwork)({ ...fixture(), details: [{ title: { ...text(""), en: "Boat" }, text: text("") }] }), /détail 1/);
+});
 (0, node_test_1.default)("artworks remain drafts until their images, story and sellable variants are ready", () => {
     const value = fixture();
     strict_1.default.throws(() => (0, artPolicy_1.parseArtArtwork)({ ...value, images: [] }), artPolicy_1.ArtInputError);

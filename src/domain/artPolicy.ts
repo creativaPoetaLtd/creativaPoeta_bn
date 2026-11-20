@@ -59,8 +59,16 @@ export function parseArtArtwork(value: unknown): ArtArtworkInput {
     if (!isArtImageUrl(url)) return invalid("Utilisez une photo téléversée dans CP Art.");
     return { url, alt: localized(image.alt, 240, "Description de la photo", true) };
   });
-  if (!Array.isArray(data.details) || data.details.length > 8) return invalid("Maximum 8 détails symboliques.");
-  const details = data.details.map(value => { const item = record(value); return { title: localized(item.title, 120, "Détail", true), text: localized(item.text, 1200, "Explication", true) }; });
+  const detailValues = data.details ?? [];
+  if (!Array.isArray(detailValues) || detailValues.length > 8) return invalid("Maximum 8 détails symboliques.");
+  const details = detailValues.flatMap((value, index) => {
+    const item = record(value);
+    const title = localized(item.title, 120, `Nom du détail ${index + 1}`);
+    const text = localized(item.text, 1200, `Explication du détail ${index + 1}`);
+    if (![...Object.values(title), ...Object.values(text)].some(Boolean)) return [];
+    if (!title.fr || !text.fr) return invalid(`Complétez le nom et l’explication en français du détail ${index + 1}, ou retirez ce détail facultatif.`);
+    return [{ title, text }];
+  });
   if (!Array.isArray(data.variants) || data.variants.length > 30) return invalid("Maximum 30 variantes par œuvre.");
   const variants = data.variants.map(value => {
     const item = record(value);
