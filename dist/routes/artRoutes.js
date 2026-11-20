@@ -9,6 +9,7 @@ const authMiddleware_1 = require("../middleware/authMiddleware");
 const permissionMiddleware_1 = require("../middleware/permissionMiddleware");
 const artController_1 = require("../controllers/artController");
 const artCommerceController_1 = require("../controllers/artCommerceController");
+const artTranslationController_1 = require("../controllers/artTranslationController");
 const router = express_1.default.Router();
 router.post("/checkout", artCommerceController_1.createArtCheckout);
 router.post("/orders/status", artCommerceController_1.getArtOrderStatus);
@@ -19,6 +20,7 @@ router.get("/admin/orders", authMiddleware_1.authenticateUser, (0, permissionMid
 router.patch("/admin/orders/:id", authMiddleware_1.authenticateUser, (0, permissionMiddleware_1.authorizeAdminPermission)("art:orders"), artCommerceController_1.updateArtOrder);
 const catalogue = (0, permissionMiddleware_1.authorizeAdminPermission)("art:catalog");
 const requests = (0, permissionMiddleware_1.authorizeAdminPermission)("art:requests");
+router.post("/admin/translate", authMiddleware_1.authenticateUser, catalogue, artTranslationController_1.translateArt);
 const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024, files: 1 }, fileFilter: (_req, file, callback) => {
         if (["image/jpeg", "image/png", "image/webp"].includes(file.mimetype))
             callback(null, true);

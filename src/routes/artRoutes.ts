@@ -5,6 +5,7 @@ import { authorizeAdminPermission } from "../middleware/permissionMiddleware";
 import { createArt, createArtRequest, getArtQuote, listAdminArt, listArtRequests, listPublicArt, updateArt, updateArtRequest, uploadArtImage } from "../controllers/artController";
 
 import { createArtCheckout, getArtOrderStatus, getArtSettings, getArtShippingProfiles, listArtOrders, receiveArtStripeWebhook, saveArtSettings, updateArtOrder } from "../controllers/artCommerceController";
+import { translateArt } from "../controllers/artTranslationController";
 
 const router = express.Router();
 router.post("/checkout", createArtCheckout);
@@ -16,6 +17,7 @@ router.get("/admin/orders", authenticateUser, authorizeAdminPermission("art:orde
 router.patch("/admin/orders/:id", authenticateUser, authorizeAdminPermission("art:orders"), updateArtOrder);
 const catalogue = authorizeAdminPermission("art:catalog");
 const requests = authorizeAdminPermission("art:requests");
+router.post("/admin/translate", authenticateUser, catalogue, translateArt);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024, files: 1 }, fileFilter: (_req, file, callback) => {
   if (["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)) callback(null, true);
   else callback(new Error("Utilisez une image JPEG, PNG ou WebP (3 Mo maximum)."));

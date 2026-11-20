@@ -65,6 +65,8 @@ const rateProfile = (req) => {
         return { name: "auth", limit: 15, windowMs: 15 * 60000 };
     if (/^\/api\/analytics/.test(req.path))
         return { name: "analytics", limit: 400, windowMs: 10 * 60000 };
+    if (req.path === "/api/art/admin/translate")
+        return { name: "art-translation", limit: 30, windowMs: 10 * 60000 };
     return { name: "mutation", limit: 80, windowMs: 10 * 60000 };
 };
 app.use((req, res, next) => {

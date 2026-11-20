@@ -11,6 +11,7 @@ process.env.CLOUDINARY_CLOUD_NAME = "cp-art-qa";
 process.env.CLOUDINARY_API_KEY = "qa-not-a-real-key";
 process.env.CLOUDINARY_API_SECRET = "qa-not-a-real-secret";
 const stripeQA = process.env.CP_ART_QA_COMMERCE === "true" ? require("./art-stripe-qa.cjs") : null;
+if (process.env.CP_ART_QA_TRANSLATION === "true") require("./art-translation-qa.cjs");
 const sessionFile = path.resolve(process.env.CP_ART_QA_SESSION_PATH || "../cp-art-qa-session.json");
 const text = fr => ({ fr, en: "", nl: "" });
 let mongo, server;
